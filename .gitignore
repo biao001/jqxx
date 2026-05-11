@@ -1,1 +1,4 @@
-fatigue/
+fatigue/data/
+*.mp4
+*.avi
+*.pt
