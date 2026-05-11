@@ -1,2 +1,0 @@
-"""Fatigue model B package."""
-
