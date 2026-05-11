@@ -1,0 +1,17 @@
+# 示例 YOLO 数据集配置 - 安全带检测
+# 使用方式:
+#   1. 按 YOLO 格式整理数据到下列路径
+#   2. python scripts/train.py --data data/seatbelt_example.yaml
+
+path: D:/Desktop/DMS/behavior_algo_a/data/seatbelt
+train: images/train
+val: images/val
+test: images/test  # 可选
+
+# 类别数
+nc: 2
+
+# 类别名（检测器依据名字包含 "no"/"without"/"unbelted" 判定未系）
+names:
+  0: belt
+  1: no_belt

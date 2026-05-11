@@ -1,0 +1,8 @@
+# 示例 YOLO 数据集配置 - 吸烟检测
+path: D:/Desktop/DMS/behavior_algo_a/data/smoking
+train: images/train
+val: images/val
+
+nc: 1
+names:
+  0: cigarette

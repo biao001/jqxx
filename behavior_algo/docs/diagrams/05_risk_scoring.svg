@@ -1,0 +1,264 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" font-family="'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif">
+  <title>Risk Scoring</title>
+  <defs>
+    <linearGradient id="gradBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6AA1FF"/>
+      <stop offset="100%" stop-color="#2F5ACC"/>
+    </linearGradient>
+    <linearGradient id="gradPurple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#9883F3"/>
+      <stop offset="100%" stop-color="#4A38B0"/>
+    </linearGradient>
+    <linearGradient id="gradBlueFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#EEF2FF"/>
+      <stop offset="100%" stop-color="#DDE3FF"/>
+    </linearGradient>
+    <linearGradient id="gradPurpleFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F3EEFF"/>
+      <stop offset="100%" stop-color="#E4DAFD"/>
+    </linearGradient>
+    <linearGradient id="gradDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A2040"/>
+      <stop offset="100%" stop-color="#0B1028"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#6B4FD9" flood-opacity="0.08"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4A7BF5"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="8" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6B4FD9"/>
+    </marker>
+    <marker id="arrowGrey" viewBox="0 0 10 10" refX="8" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#B5BFEB"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1600" height="900" fill="#F5F7FF"/>
+
+<rect x="60" y="40" width="6" height="30" fill="#4A7BF5" rx="2"/>
+<text x="74" y="64" text-anchor="start" style="font-size:22px;fill:#1F2937;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">时间窗口风险评估与评分</text>
+<text x="74" y="86" text-anchor="start" style="font-size:12px;fill:#6B7280;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">多行为并发 · 加权互补合成 · 持续时长加成 · 5 档 tier 映射</text>
+<line x1="74" y1="96" x2="920" y2="96" stroke="#D5D8E6" stroke-width="1"/>
+<circle cx="922" cy="96" r="4" fill="#4A7BF5"/>
+<rect x="1420" y="40" width="7" height="7" fill="#6B4FD9"/>
+<rect x="1430" y="40" width="7" height="7" fill="#4A7BF5"/>
+<rect x="1440" y="40" width="7" height="7" fill="#D9CEF8"/>
+<rect x="1450" y="40" width="7" height="7" fill="#6B4FD9"/>
+<rect x="1420" y="50" width="7" height="7" fill="#4A7BF5"/>
+<rect x="1430" y="50" width="7" height="7" fill="#D9CEF8"/>
+<rect x="1440" y="50" width="7" height="7" fill="#6B4FD9"/>
+<rect x="1450" y="50" width="7" height="7" fill="#4A7BF5"/>
+<rect x="1420" y="60" width="7" height="7" fill="#D9CEF8"/>
+<rect x="1430" y="60" width="7" height="7" fill="#6B4FD9"/>
+<rect x="1440" y="60" width="7" height="7" fill="#4A7BF5"/>
+<rect x="1450" y="60" width="7" height="7" fill="#D9CEF8"/>
+<circle cx="1495" cy="60" r="22" fill="#EEEFF8"/>
+<circle cx="1495" cy="60" r="17" fill="#2D387A"/>
+<circle cx="1495" cy="60" r="12" fill="#0F1640"/>
+<circle cx="1498" cy="57" r="4" fill="#4A7BF5"/>
+<rect x="60" y="150" width="1480" height="320" rx="12" ry="12" fill="#FFFFFF" stroke="#E5E7FF" stroke-width="1" filter="url(#soft)"/>
+<text x="80" y="180" text-anchor="start" style="font-size:17px;fill:#1F2937;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">① 时序滑窗与 duration_s 累计</text>
+<text x="80" y="200" text-anchor="start" style="font-size:12px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">5 帧滑窗多数投票 · 抑制单帧抖动 · 激活后开始持续计时</text>
+<line x1="140" y1="260" x2="1500" y2="260" stroke="#6B7280" stroke-width="1.5"/>
+<text x="130" y="264" text-anchor="end" style="font-size:12px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">frame</text>
+<rect x="150" y="215" width="61" height="20" rx="3" ry="3" fill="#E2E8F0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="180.5" y="228" text-anchor="middle" style="font-size:12px;fill:#6B7280;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">○</text>
+<rect x="150" y="268" width="61" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<text x="180.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0</text>
+<rect x="215" y="215" width="61" height="20" rx="3" ry="3" fill="#E2E8F0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="245.5" y="228" text-anchor="middle" style="font-size:12px;fill:#6B7280;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">○</text>
+<rect x="215" y="268" width="61" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<text x="245.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">1</text>
+<rect x="280" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="310.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="280" y="268" width="61" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<text x="310.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">2</text>
+<rect x="345" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="375.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="345" y="268" width="61" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<text x="375.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">3</text>
+<rect x="410" y="215" width="61" height="20" rx="3" ry="3" fill="#E2E8F0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="440.5" y="228" text-anchor="middle" style="font-size:12px;fill:#6B7280;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">○</text>
+<rect x="410" y="268" width="61" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<text x="440.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">4</text>
+<rect x="475" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="505.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="475" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="505.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="505.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">5</text>
+<rect x="540" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="570.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="540" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="570.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="570.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">6</text>
+<rect x="605" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="635.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="605" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="635.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="635.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">7</text>
+<rect x="670" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="700.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="670" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="700.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="700.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">8</text>
+<rect x="735" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="765.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="735" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="765.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="765.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">9</text>
+<rect x="800" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="830.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="800" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="830.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="830.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">10</text>
+<rect x="865" y="215" width="61" height="20" rx="3" ry="3" fill="#E2E8F0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="895.5" y="228" text-anchor="middle" style="font-size:12px;fill:#6B7280;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">○</text>
+<rect x="865" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="895.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="895.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">11</text>
+<rect x="930" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="960.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="930" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="960.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="960.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">12</text>
+<rect x="995" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1025.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="995" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1025.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="1025.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">13</text>
+<rect x="1060" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1090.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="1060" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1090.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="1090.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">14</text>
+<rect x="1125" y="215" width="61" height="20" rx="3" ry="3" fill="#6B4FD9" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1155.5" y="228" text-anchor="middle" style="font-size:12px;fill:#FFFFFF;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">●</text>
+<rect x="1125" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1155.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="1155.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">15</text>
+<rect x="1190" y="215" width="61" height="20" rx="3" ry="3" fill="#E2E8F0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1220.5" y="228" text-anchor="middle" style="font-size:12px;fill:#6B7280;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">○</text>
+<rect x="1190" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1220.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="1220.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">16</text>
+<rect x="1255" y="215" width="61" height="20" rx="3" ry="3" fill="#E2E8F0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1285.5" y="228" text-anchor="middle" style="font-size:12px;fill:#6B7280;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">○</text>
+<rect x="1255" y="268" width="61" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1285.5" y="283" text-anchor="middle" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ON</text>
+<text x="1285.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">17</text>
+<rect x="1320" y="215" width="61" height="20" rx="3" ry="3" fill="#E2E8F0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1350.5" y="228" text-anchor="middle" style="font-size:12px;fill:#6B7280;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">○</text>
+<rect x="1320" y="268" width="61" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1350.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">18</text>
+<rect x="1385" y="215" width="61" height="20" rx="3" ry="3" fill="#E2E8F0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1415.5" y="228" text-anchor="middle" style="font-size:12px;fill:#6B7280;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">○</text>
+<rect x="1385" y="268" width="61" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1415.5" y="310" text-anchor="middle" style="font-size:10px;fill:#6B7280;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">19</text>
+<text x="134" y="228" text-anchor="end" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">检测</text>
+<text x="134" y="283" text-anchor="end" style="font-size:11px;fill:#22C55E;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">激活</text>
+<path d="M 495 340 L 1316 340" stroke="#F59E0B" stroke-width="2" marker-start="url(#arrowBlue)" marker-end="url(#arrowBlue)"/>
+<text x="905.5" y="364" text-anchor="middle" style="font-size:12px;fill:#F59E0B;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">duration_s ≈ 0.52s  （假设 25 FPS · 共 13 帧激活）</text>
+<rect x="1240" y="225" width="290" height="140" rx="8" ry="8" fill="#F9FAFF" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1255" y="245" text-anchor="start" style="font-size:12px;fill:#4A38B0;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">触发条件</text>
+<text x="1255" y="267" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">激活：窗内命中 ≥ 3 / 5</text>
+<text x="1255" y="285" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">失活：窗内未中 ≥ 3 / 5</text>
+<text x="1255" y="310" text-anchor="start" style="font-size:11px;fill:#2F5ACC;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">⬆ 触发延迟 2-3 帧</text>
+<text x="1255" y="330" text-anchor="start" style="font-size:11px;fill:#22C55E;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">⬇ 误报抑制 &gt; 60%</text>
+<rect x="60" y="490" width="490" height="380" rx="12" ry="12" fill="#FFFFFF" stroke="#E5E7FF" stroke-width="1" filter="url(#soft)"/>
+<text x="80" y="520" text-anchor="start" style="font-size:16px;fill:#1F2937;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">② 行为基础风险权重 w</text>
+<text x="80" y="540" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">人工校准 · 符合行业 DMS 告警层级</text>
+<text x="90" y="591" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:600;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">no_driver</text>
+<rect x="280" y="577" width="240" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="280" y="577" width="300" height="20" rx="3" ry="3" fill="#EF4444" stroke="#E5E7FF" stroke-width="1"/>
+<text x="575" y="591" text-anchor="end" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">1.00</text>
+<text x="90" y="623" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:600;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">calling</text>
+<rect x="280" y="609" width="240" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="280" y="609" width="240" height="20" rx="3" ry="3" fill="#DC2626" stroke="#E5E7FF" stroke-width="1"/>
+<text x="515" y="623" text-anchor="end" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0.80</text>
+<text x="90" y="655" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:600;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">phone_use</text>
+<rect x="280" y="641" width="240" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="280" y="641" width="225" height="20" rx="3" ry="3" fill="#EA580C" stroke="#E5E7FF" stroke-width="1"/>
+<text x="500" y="655" text-anchor="end" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0.75</text>
+<text x="90" y="687" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:600;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">no_seatbelt</text>
+<rect x="280" y="673" width="240" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="280" y="673" width="210" height="20" rx="3" ry="3" fill="#F59E0B" stroke="#E5E7FF" stroke-width="1"/>
+<text x="485" y="687" text-anchor="end" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0.70</text>
+<text x="90" y="719" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:600;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">hands_off_wheel</text>
+<rect x="280" y="705" width="240" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="280" y="705" width="195" height="20" rx="3" ry="3" fill="#D97706" stroke="#E5E7FF" stroke-width="1"/>
+<text x="470" y="719" text-anchor="end" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0.65</text>
+<text x="90" y="751" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:600;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">smoking</text>
+<rect x="280" y="737" width="240" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="280" y="737" width="135" height="20" rx="3" ry="3" fill="#CA8A04" stroke="#E5E7FF" stroke-width="1"/>
+<text x="410" y="751" text-anchor="end" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0.45</text>
+<text x="90" y="783" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:600;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">lens_covered</text>
+<rect x="280" y="769" width="240" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="280" y="769" width="120" height="20" rx="3" ry="3" fill="#84CC16" stroke="#E5E7FF" stroke-width="1"/>
+<text x="395" y="783" text-anchor="end" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0.40</text>
+<text x="90" y="815" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:600;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">abnormal_posture</text>
+<rect x="280" y="801" width="240" height="20" rx="3" ry="3" fill="#F3F4F6" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="280" y="801" width="90" height="20" rx="3" ry="3" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="365" y="815" text-anchor="end" style="font-size:11px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0.30</text>
+<rect x="570" y="490" width="500" height="380" rx="12" ry="12" fill="url(#gradPurpleFill)" stroke="#6B4FD9" stroke-width="1" filter="url(#soft)"/>
+<text x="590" y="520" text-anchor="start" style="font-size:16px;fill:#4A38B0;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">③ 加权互补合成公式</text>
+<text x="590" y="540" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">概率互补 · 避免单纯累加越界</text>
+<rect x="590" y="568" width="460" height="60" rx="8" ry="8" fill="#FFFFFF" stroke="#6B4FD9" stroke-width="1.5"/>
+<text x="820.0" y="605.2" text-anchor="middle" style="font-size:16px;fill:#4A38B0;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">score = 100 × ( 1 − ∏(1 − w_i · c_i · τ_i) )</text>
+<rect x="590" y="646" width="40" height="30" rx="6" ry="6" fill="#4A38B0" stroke="#E5E7FF" stroke-width="1"/>
+<text x="610" y="666" text-anchor="middle" style="font-size:14px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">w_i</text>
+<text x="642" y="666" text-anchor="start" style="font-size:12px;fill:#4B5563;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">行为基础权重 (左表)</text>
+<rect x="590" y="678" width="40" height="30" rx="6" ry="6" fill="#2F5ACC" stroke="#E5E7FF" stroke-width="1"/>
+<text x="610" y="698" text-anchor="middle" style="font-size:14px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">c_i</text>
+<text x="642" y="698" text-anchor="start" style="font-size:12px;fill:#4B5563;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">YOLO 检出置信度 0-1</text>
+<rect x="590" y="710" width="40" height="30" rx="6" ry="6" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="610" y="730" text-anchor="middle" style="font-size:14px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">τ_i</text>
+<text x="642" y="730" text-anchor="start" style="font-size:12px;fill:#4B5563;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">时长加成 = min(1.6, 1 + 0.06 × min(dur,10))</text>
+<rect x="590" y="742" width="40" height="30" rx="6" ry="6" fill="#F59E0B" stroke="#E5E7FF" stroke-width="1"/>
+<text x="610" y="762" text-anchor="middle" style="font-size:14px;fill:#FFFFFF;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">∏</text>
+<text x="642" y="762" text-anchor="start" style="font-size:12px;fill:#4B5563;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">所有激活行为连乘 (互补概率)</text>
+<rect x="590" y="800" width="460" height="60" rx="8" ry="8" fill="#FFFFFF" stroke="#E5E7FF" stroke-width="1"/>
+<text x="606" y="818" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">示例：calling(0.87, 2.4s) + no_seatbelt(0.75, 3.5s)</text>
+<text x="606" y="842" text-anchor="start" style="font-size:11px;fill:#4A38B0;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">→ 1 − (1 − 0.80·0.87·1.14) × (1 − 0.70·0.75·1.21)</text>
+<text x="1030" y="842" text-anchor="end" style="font-size:13px;fill:#EF4444;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">= 76.3</text>
+<rect x="1090" y="490" width="450" height="380" rx="12" ry="12" fill="#FFFFFF" stroke="#E5E7FF" stroke-width="1" filter="url(#soft)"/>
+<text x="1110" y="520" text-anchor="start" style="font-size:16px;fill:#1F2937;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">④ 风险等级映射 &amp; 预警</text>
+<text x="1110" y="540" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">动态颜色 + 多通道告警</text>
+<rect x="1110" y="575" width="410" height="44" rx="6" ry="6" fill="#F9FAFF" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="1110" y="575" width="10" height="44" rx="5" ry="5" fill="#22C55E" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1130" y="593" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">0–10</text>
+<text x="1130" y="611" text-anchor="start" style="font-size:13px;fill:#22C55E;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">SAFE</text>
+<text x="1230" y="603" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">无告警</text>
+<rect x="1110" y="627" width="410" height="44" rx="6" ry="6" fill="#F9FAFF" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="1110" y="627" width="10" height="44" rx="5" ry="5" fill="#FBBF24" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1130" y="645" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">10–30</text>
+<text x="1130" y="663" text-anchor="start" style="font-size:13px;fill:#FBBF24;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">ATTENTION</text>
+<text x="1230" y="655" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">屏幕柔和提示</text>
+<rect x="1110" y="679" width="410" height="44" rx="6" ry="6" fill="#F9FAFF" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="1110" y="679" width="10" height="44" rx="5" ry="5" fill="#F59E0B" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1130" y="697" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">30–60</text>
+<text x="1130" y="715" text-anchor="start" style="font-size:13px;fill:#F59E0B;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">WARNING</text>
+<text x="1230" y="707" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">仪表盘图标 + 柔和蜂鸣</text>
+<rect x="1110" y="731" width="410" height="44" rx="6" ry="6" fill="#F9FAFF" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="1110" y="731" width="10" height="44" rx="5" ry="5" fill="#DC2626" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1130" y="749" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">60–85</text>
+<text x="1130" y="767" text-anchor="start" style="font-size:13px;fill:#DC2626;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">DANGER</text>
+<text x="1230" y="759" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">语音警告 + 仪表闪烁</text>
+<rect x="1110" y="783" width="410" height="44" rx="6" ry="6" fill="#F9FAFF" stroke="#E5E7FF" stroke-width="1"/>
+<rect x="1110" y="783" width="10" height="44" rx="5" ry="5" fill="#EF4444" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1130" y="801" text-anchor="start" style="font-size:12px;fill:#1F2937;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">85–100</text>
+<text x="1130" y="819" text-anchor="start" style="font-size:13px;fill:#EF4444;font-weight:700;font-family:'JetBrains Mono', Consolas, 'SF Mono', monospace;">CRITICAL</text>
+<text x="1230" y="811" text-anchor="start" style="font-size:11px;fill:#4B5563;font-weight:400;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">强音警告 + 方向盘震动 + 限速</text>
+<rect x="1110" y="840" width="410" height="22" rx="4" ry="4" fill="#FEF3C7" stroke="#E5E7FF" stroke-width="1"/>
+<text x="1120" y="855" text-anchor="start" style="font-size:11px;fill:#92400E;font-weight:700;font-family:'Microsoft YaHei', 'SF Pro SC', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;">⚡ high 级连续 &gt;2s → danger；&gt;5s → critical</text>
+</svg>
