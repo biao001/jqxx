@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+
+  --color-primary: #005daa;
+  --color-primary-container: #0075d5;
+  --color-on-primary: #ffffff;
+  
+  --color-surface: #f9f9ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f1f3fd;
+  --color-surface-container: #ebeef7;
+  --color-surface-container-high: #e5e8f1;
+  --color-surface-container-highest: #dfe2ec;
+  
+  --color-on-surface: #181c22;
+  --color-on-surface-variant: #404753;
+  
+  --color-outline: #707785;
+  --color-outline-variant: #c0c7d6;
+
+  --color-secondary-container: #d4e5ed;
+  --color-on-secondary-container: #57676e;
+
+  --color-tertiary: #934600;
+  --color-tertiary-container: #b95a00;
+
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  --spacing-gutter: 16px;
+  --spacing-margin: 24px;
+}
+
+@layer base {
+  body {
+    @apply bg-surface text-on-surface font-sans;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface-container-lowest border border-outline-variant rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.06)];
+  }
+  
+  .btn-primary {
+    @apply bg-primary text-white font-semibold rounded-lg px-6 py-3 hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2;
+  }
+
+  .btn-secondary {
+    @apply bg-surface-container text-on-surface border border-outline-variant font-semibold rounded-lg px-6 py-3 hover:bg-surface-container-high transition-all active:scale-95 flex items-center justify-center gap-2;
+  }
+
+  .input-label {
+    @apply text-xs font-bold text-outline uppercase tracking-wider mb-2 block;
+  }
+}
