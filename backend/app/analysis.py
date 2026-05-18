@@ -401,6 +401,8 @@ class AnalysisService:
             camera_ok=bool(behavior.get("camera_ok", True)),
             detections=detections,
         )
+        current_behavior = self._current_behavior_summary(behavior)
+        current_fatigue = self._current_fatigue_summary(fatigue)
         return {
             "job_id": job_id,
             "source": source,
@@ -408,6 +410,8 @@ class AnalysisService:
             "timestamp": timestamp,
             "stats": stats,
             "detections": detections,
+            "current_behavior": current_behavior,
+            "current_fatigue": current_fatigue,
             "llm_analysis": self.last_llm_text,
             "report_url": None,
             "capabilities": {
@@ -424,6 +428,33 @@ class AnalysisService:
                 "behavior_risk": round(behavior_risk, 2),
                 "fatigue_risk": round(fatigue_risk, 2),
             },
+        }
+
+    def _current_behavior_summary(self, behavior: dict[str, Any]) -> dict[str, Any]:
+        events = behavior.get("behaviors") or []
+        if events:
+            severity_rank = {"none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+            top_event = max(events, key=lambda item: severity_rank.get(str(item.get("severity", "low")), 1))
+            return {
+                "label": top_event.get("label_zh") or BEHAVIOR_LABELS.get(str(top_event.get("type")), str(top_event.get("type", "风险行为"))),
+                "confidence": round(float(top_event.get("confidence", 0.0)), 4),
+                "severity": str(top_event.get("severity", "low")),
+                "recommendation": behavior.get("recommendation") or "请关注当前驾驶行为",
+            }
+        return {
+            "label": "未检测到行为风险",
+            "confidence": 1.0,
+            "severity": "none",
+            "recommendation": behavior.get("recommendation") or "正常驾驶",
+        }
+
+    def _current_fatigue_summary(self, fatigue: dict[str, Any]) -> dict[str, Any]:
+        label = str(fatigue.get("label", "Normal"))
+        return {
+            "label": FATIGUE_LABELS.get(label, label),
+            "confidence": round(float(fatigue.get("confidence", 0.0)), 4),
+            "risk_level": str(fatigue.get("risk_level", "low")),
+            "indicators": fatigue.get("indicators", {}),
         }
 
     def _aggregate_video(

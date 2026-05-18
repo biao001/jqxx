@@ -28,6 +28,24 @@ export interface Capability {
   model?: string;
 }
 
+export interface BehaviorSummary {
+  label: string;
+  confidence: number;
+  severity: Severity;
+  recommendation?: string;
+}
+
+export interface FatigueSummary {
+  label: string;
+  confidence: number;
+  risk_level: 'low' | 'medium' | 'high' | string;
+  indicators?: {
+    yawn_score?: number;
+    look_away_score?: number;
+    fatigue_score?: number;
+  };
+}
+
 export interface AnalysisResult {
   job_id: string | null;
   source: {
@@ -38,6 +56,8 @@ export interface AnalysisResult {
   timestamp: number;
   stats: DrivingStats;
   detections: Detection[];
+  current_behavior?: BehaviorSummary;
+  current_fatigue?: FatigueSummary;
   llm_analysis: string;
   report_url: string | null;
   capabilities: {
