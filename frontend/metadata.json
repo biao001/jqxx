@@ -1,0 +1,8 @@
+{
+  "name": "Driving Intelligence Analytics",
+  "description": "High-precision driving status deduction and behavior calculation platform using AI multidimensional analysis.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}
