@@ -1,20 +1,12 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-export enum DetectionType {
-  CELL_PHONE = '玩手机',
-  DISTRACTION = '视线偏离',
-  YAWN = '疑似疲劳 (打哈欠)',
-  SMOKING = '抽烟',
-}
+export type Severity = 'none' | 'low' | 'medium' | 'high' | 'critical';
 
 export interface Detection {
   id: string;
-  type: DetectionType;
+  type: string;
   timestamp: string;
   confidence: number;
+  severity: Severity;
+  source: 'behavior' | 'fatigue' | string;
 }
 
 export interface DrivingStats {
@@ -25,4 +17,41 @@ export interface DrivingStats {
   compliance: number;
   fatigue: number;
   stability: number;
+}
+
+export interface Capability {
+  name?: string;
+  mode?: 'model' | 'fallback' | string;
+  error?: string | null;
+  configured?: boolean;
+  provider?: string;
+  model?: string;
+}
+
+export interface AnalysisResult {
+  job_id: string | null;
+  source: {
+    kind: 'upload' | 'camera' | string;
+    name: string;
+  };
+  frame_id: number | null;
+  timestamp: number;
+  stats: DrivingStats;
+  detections: Detection[];
+  llm_analysis: string;
+  report_url: string | null;
+  capabilities: {
+    behavior?: Capability;
+    fatigue?: Capability;
+    llm?: Capability;
+  };
+  metrics: {
+    latency_ms?: number;
+    behavior_risk?: number;
+    fatigue_risk?: number;
+    frames_total?: number;
+    frames_processed?: number;
+    fps?: number;
+  };
+  error?: string;
 }

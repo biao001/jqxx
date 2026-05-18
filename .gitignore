@@ -18,3 +18,7 @@ behavior_algo/data/rf_datasets/
 
 # 行为算法运行时输出（截图 / demo 视频）
 behavior_algo/outputs/
+
+# Local DMS backend runtime and secrets
+backend/runtime/
+backend/.env

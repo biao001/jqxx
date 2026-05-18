@@ -1,27 +1,22 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import { motion, AnimatePresence } from 'motion/react';
-import { X, Film, Check } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Check, FileVideo, X } from 'lucide-react';
 import { useState } from 'react';
 
 interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (fileName: string) => void;
+  onConfirm: (file: File) => void;
 }
 
-const MOCK_FILES = [
-  { name: 'drive_test_01.mp4', size: '24.5 MB', date: '2023-11-20 14:30' },
-  { name: 'fatigue_sample_v2.avi', size: '158.2 MB', date: '2023-11-19 09:15' },
-  { name: 'night_driving_obs.mp4', size: '42.1 MB', date: '2023-11-18 22:45' },
-  { name: 'urban_lane_change.mov', size: '89.0 MB', date: '2023-11-17 11:20' },
-];
+function formatSize(size: number) {
+  if (size >= 1024 * 1024) {
+    return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  }
+  return `${(size / 1024).toFixed(1)} KB`;
+}
 
 export default function UploadModal({ isOpen, onClose, onConfirm }: UploadModalProps) {
-  const [selected, setSelected] = useState(MOCK_FILES[0].name);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   return (
     <AnimatePresence>
@@ -34,7 +29,7 @@ export default function UploadModal({ isOpen, onClose, onConfirm }: UploadModalP
             onClick={onClose}
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
           />
-          
+
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -49,52 +44,28 @@ export default function UploadModal({ isOpen, onClose, onConfirm }: UploadModalP
             </div>
 
             <div className="p-6 flex flex-col gap-6">
-              <div className="flex flex-col gap-2">
-                <label className="input-label">文件路径</label>
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-slate-600 font-medium focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    readOnly
-                    type="text"
-                    value="C:\Users\Admin\Videos"
-                  />
-                  <button className="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg border border-slate-200 font-medium hover:bg-slate-200 transition-colors">
-                    浏览
-                  </button>
+              <label className="border-2 border-dashed border-outline-variant rounded-lg bg-slate-50/70 min-h-[220px] flex flex-col items-center justify-center gap-4 cursor-pointer hover:border-primary hover:bg-blue-50/40 transition-colors">
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept="video/*"
+                  onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                />
+                <FileVideo size={48} className={selectedFile ? 'text-primary' : 'text-slate-400'} />
+                <div className="text-center">
+                  <p className="font-semibold text-slate-800">{selectedFile ? selectedFile.name : '选择本地真实视频文件'}</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {selectedFile ? `${formatSize(selectedFile.size)} · ${selectedFile.type || 'video'}` : '支持 mp4、avi、mov 等浏览器可选择的视频'}
+                  </p>
                 </div>
-              </div>
+              </label>
 
-              <div className="flex flex-col gap-2">
-                <label className="input-label">选择视频文件</label>
-                <div className="border border-slate-200 rounded-lg overflow-hidden flex flex-col divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
-                  {MOCK_FILES.map((file) => (
-                    <label
-                      key={file.name}
-                      className={`flex items-center gap-4 px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors group ${
-                        selected === file.name ? 'bg-blue-50/50' : ''
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="video_select"
-                        checked={selected === file.name}
-                        onChange={() => setSelected(file.name)}
-                        className="w-4 h-4 text-primary focus:ring-primary border-slate-300"
-                      />
-                      <Film className={`text-slate-400 transition-colors ${selected === file.name ? 'text-primary' : 'group-hover:text-primary'}`} size={20} />
-                      <div className="flex-1 min-w-0">
-                        <p className={`font-medium truncate ${selected === file.name ? 'text-primary' : 'text-slate-800'}`}>
-                          {file.name}
-                        </p>
-                        <p className="text-slate-400 text-xs">
-                          {file.size} • {file.date}
-                        </p>
-                      </div>
-                      {selected === file.name && <Check className="text-primary" size={16} />}
-                    </label>
-                  ))}
+              {selectedFile && (
+                <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-primary">
+                  <Check size={18} />
+                  <span className="font-medium text-sm">已选择真实视频，确认后可上传到本地后端分析。</span>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
@@ -105,8 +76,9 @@ export default function UploadModal({ isOpen, onClose, onConfirm }: UploadModalP
                 取消
               </button>
               <button
-                onClick={() => onConfirm(selected)}
-                className="px-8 py-2.5 rounded-lg bg-primary text-white font-semibold shadow-md hover:bg-primary/90 transition-all active:scale-95"
+                onClick={() => selectedFile && onConfirm(selectedFile)}
+                disabled={!selectedFile}
+                className="px-8 py-2.5 rounded-lg bg-primary text-white font-semibold shadow-md hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 确认
               </button>
