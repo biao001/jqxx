@@ -38,8 +38,10 @@ def test_combine_exposes_current_behavior_and_fatigue_summaries():
     )
 
     assert result["current_behavior"]["label"] == "驾驶中使用手机"
+    assert result["current_behavior"]["algorithm_label"] == "行为识别"
     assert result["current_behavior"]["confidence"] == 0.93
     assert result["current_behavior"]["severity"] == "high"
     assert result["current_fatigue"]["label"] == "打哈欠"
+    assert result["current_fatigue"]["algorithm_label"] == "疲劳检测"
     assert result["current_fatigue"]["confidence"] == 0.81
     assert result["current_fatigue"]["risk_level"] == "medium"

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Bell, Film, HelpCircle, Loader2, UserCircle } from 'lucide-react';
+import { AlertCircle, Bell, Film, HelpCircle, UserCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import Sidebar from './components/Sidebar';
 import ControlPanel from './components/ControlPanel';
@@ -294,7 +294,7 @@ export default function App() {
   const realtimeOverlays = latestResult || isAnalyzing ? (
     <div className="absolute left-4 right-4 top-16 grid grid-cols-2 gap-3 pointer-events-none">
       <div className={`rounded-lg border px-4 py-3 backdrop-blur-md shadow-lg ${behaviorBadgeClass}`}>
-        <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">行为识别实时结果</div>
+        <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">{currentBehavior?.algorithm_label || '行为识别'}</div>
         <div className="mt-1 text-lg font-bold truncate">{currentBehavior?.label || '等待行为识别结果'}</div>
         <div className="mt-1 flex items-center justify-between text-xs opacity-90">
           <span>置信度 {currentBehavior ? `${(currentBehavior.confidence * 100).toFixed(0)}%` : '--'}</span>
@@ -302,7 +302,7 @@ export default function App() {
         </div>
       </div>
       <div className={`rounded-lg border px-4 py-3 backdrop-blur-md shadow-lg ${fatigueBadgeClass}`}>
-        <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">疲劳检测实时结果</div>
+        <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">{currentFatigue?.algorithm_label || '疲劳检测'}</div>
         <div className="mt-1 text-lg font-bold truncate">{currentFatigue?.label || '等待疲劳检测结果'}</div>
         <div className="mt-1 flex items-center justify-between text-xs opacity-90">
           <span>置信度 {currentFatigue ? `${(currentFatigue.confidence * 100).toFixed(0)}%` : '--'}</span>
@@ -363,14 +363,6 @@ export default function App() {
                             autoPlay={isCameraActive}
                             playsInline
                           />
-                          {isAnalyzing && (
-                            <div className="absolute inset-0 pointer-events-none bg-black/10 flex items-center justify-center">
-                              <div className="rounded-full bg-black/60 text-white px-4 py-2 flex items-center gap-2 text-sm font-semibold">
-                                <Loader2 size={18} className="animate-spin" />
-                                {isCameraActive ? '实时相机逐帧检测' : '上传视频实时检测'}
-                              </div>
-                            </div>
-                          )}
                           {realtimeOverlays}
                           <div className="absolute top-4 left-4 flex gap-2">
                             <span className="px-3 py-1 bg-black/60 backdrop-blur-sm text-white text-xs font-bold rounded flex items-center gap-2">

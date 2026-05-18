@@ -29,6 +29,7 @@ export interface Capability {
 }
 
 export interface BehaviorSummary {
+  algorithm_label?: string;
   label: string;
   confidence: number;
   severity: Severity;
@@ -36,6 +37,7 @@ export interface BehaviorSummary {
 }
 
 export interface FatigueSummary {
+  algorithm_label?: string;
   label: string;
   confidence: number;
   risk_level: 'low' | 'medium' | 'high' | string;

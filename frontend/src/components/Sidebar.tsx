@@ -26,6 +26,12 @@ function statusColor(status?: string) {
   return 'bg-slate-100 text-slate-500 border-slate-200';
 }
 
+function sourceLabel(source: string) {
+  if (source === 'behavior') return '行为识别';
+  if (source === 'fatigue') return '疲劳检测';
+  return source || '算法';
+}
+
 export default function Sidebar({ stats, detections, analysisText, isAnalyzing, latestResult, onDownloadReport }: SidebarProps) {
   const capabilityMode = latestResult?.capabilities.behavior?.mode || latestResult?.capabilities.fatigue?.mode;
 
@@ -85,7 +91,7 @@ export default function Sidebar({ stats, detections, analysisText, isAnalyzing, 
                     </div>
                     <div className="min-w-0">
                       <span className="font-medium text-sm truncate block">{d.type}</span>
-                      <span className="text-[11px] text-outline">{(d.confidence * 100).toFixed(0)}% · {d.severity}</span>
+                      <span className="text-[11px] text-outline">{sourceLabel(d.source)} · {(d.confidence * 100).toFixed(0)}% · {d.severity}</span>
                     </div>
                   </div>
                   <span className="text-xs text-outline font-mono">{d.timestamp}</span>
