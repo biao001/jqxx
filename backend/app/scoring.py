@@ -31,7 +31,7 @@ def normalize_detection(
 ) -> dict[str, Any]:
     label = event.get("label_zh") or event.get("label") or event.get("type") or "未知事件"
     confidence = round(float(event.get("confidence", 0.0)), 4)
-    return {
+    normalized = {
         "id": f"{prefix}-{index}",
         "type": str(label),
         "timestamp": format_timestamp(timestamp_seconds),
@@ -39,6 +39,9 @@ def normalize_detection(
         "severity": str(event.get("severity") or event.get("risk_level") or "low"),
         "source": prefix,
     }
+    if event.get("bbox") is not None:
+        normalized["bbox"] = [int(value) for value in event["bbox"]]
+    return normalized
 
 
 def risk_level_to_score(risk_level: str | None) -> float:

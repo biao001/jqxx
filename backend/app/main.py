@@ -30,6 +30,7 @@ def health() -> dict:
         "ok": True,
         "service": "dms-backend",
         "llm_configured": bool(settings.llm.api_key),
+        "capabilities": service.capabilities(),
     }
 
 

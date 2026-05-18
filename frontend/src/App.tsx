@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Bell, Film, HelpCircle, UserCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import Sidebar from './components/Sidebar';
@@ -29,6 +29,24 @@ function mergeDetections(previous: Detection[], incoming: Detection[]) {
   return merged.slice(-80);
 }
 
+function videoBoxStyle(video: HTMLVideoElement | null, bbox?: number[] | null): CSSProperties | null {
+  if (!video || !bbox || bbox.length !== 4 || video.videoWidth === 0 || video.videoHeight === 0) return null;
+  const rect = video.getBoundingClientRect();
+  const scale = Math.min(rect.width / video.videoWidth, rect.height / video.videoHeight);
+  const renderedWidth = video.videoWidth * scale;
+  const renderedHeight = video.videoHeight * scale;
+  const offsetX = (rect.width - renderedWidth) / 2;
+  const offsetY = (rect.height - renderedHeight) / 2;
+  const [x1, y1, x2, y2] = bbox;
+
+  return {
+    left: `${offsetX + x1 * scale}px`,
+    top: `${offsetY + y1 * scale}px`,
+    width: `${Math.max(1, (x2 - x1) * scale)}px`,
+    height: `${Math.max(1, (y2 - y1) * scale)}px`,
+  };
+}
+
 export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -41,6 +59,7 @@ export default function App() {
   const [latestResult, setLatestResult] = useState<AnalysisResult | null>(null);
   const [currentBehavior, setCurrentBehavior] = useState<BehaviorSummary | null>(null);
   const [currentFatigue, setCurrentFatigue] = useState<FatigueSummary | null>(null);
+  const [behaviorBoxStyle, setBehaviorBoxStyle] = useState<CSSProperties | null>(null);
   const [backendOnline, setBackendOnline] = useState(false);
   const [statusMessage, setStatusMessage] = useState('等待真实视频或相机输入');
 
@@ -59,6 +78,7 @@ export default function App() {
     setLatestResult(null);
     setCurrentBehavior(null);
     setCurrentFatigue(null);
+    setBehaviorBoxStyle(null);
     setAnalysisText('');
   }, []);
 
@@ -98,6 +118,13 @@ export default function App() {
       if (selectedVideoUrl) URL.revokeObjectURL(selectedVideoUrl);
     };
   }, [selectedVideoUrl]);
+
+  useEffect(() => {
+    const updateBox = () => setBehaviorBoxStyle(videoBoxStyle(videoRef.current, currentBehavior?.bbox ?? null));
+    updateBox();
+    window.addEventListener('resize', updateBox);
+    return () => window.removeEventListener('resize', updateBox);
+  }, [currentBehavior?.bbox, selectedVideoUrl, isCameraActive]);
 
   const stopFrameStream = useCallback(() => {
     if (captureTimerRef.current) {
@@ -291,7 +318,7 @@ export default function App() {
         ? 'border-red-400/60 bg-red-500/25 text-red-50'
         : 'border-orange-300/60 bg-orange-500/25 text-orange-50';
 
-  const realtimeOverlays = latestResult || isAnalyzing ? (
+  const realtimeOverlays = latestResult ? (
     <div className="absolute left-4 right-4 top-16 grid grid-cols-2 gap-3 pointer-events-none">
       <div className={`rounded-lg border px-4 py-3 backdrop-blur-md shadow-lg ${behaviorBadgeClass}`}>
         <div className="text-[11px] font-bold uppercase tracking-wider opacity-80">{currentBehavior?.algorithm_label || '行为识别'}</div>
@@ -361,8 +388,19 @@ export default function App() {
                             className="w-full h-full object-contain bg-black"
                             controls={!isCameraActive}
                             autoPlay={isCameraActive}
+                            onLoadedMetadata={() => setBehaviorBoxStyle(videoBoxStyle(videoRef.current, currentBehavior?.bbox ?? null))}
                             playsInline
                           />
+                          {behaviorBoxStyle && currentBehavior && currentBehavior.severity !== 'none' && (
+                            <div
+                              className="absolute pointer-events-none border-2 border-red-400 shadow-[0_0_18px_rgba(248,113,113,0.65)]"
+                              style={behaviorBoxStyle}
+                            >
+                              <div className="absolute left-0 top-0 -translate-y-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white shadow">
+                                {currentBehavior.algorithm_label || '行为识别'} · {currentBehavior.label}
+                              </div>
+                            </div>
+                          )}
                           {realtimeOverlays}
                           <div className="absolute top-4 left-4 flex gap-2">
                             <span className="px-3 py-1 bg-black/60 backdrop-blur-sm text-white text-xs font-bold rounded flex items-center gap-2">

@@ -7,6 +7,7 @@ export interface Detection {
   confidence: number;
   severity: Severity;
   source: 'behavior' | 'fatigue' | string;
+  bbox?: [number, number, number, number] | number[];
 }
 
 export interface DrivingStats {
@@ -21,11 +22,13 @@ export interface DrivingStats {
 
 export interface Capability {
   name?: string;
-  mode?: 'model' | 'fallback' | string;
+  mode?: 'model' | 'fallback' | 'partial' | 'not_loaded' | string;
   error?: string | null;
   configured?: boolean;
   provider?: string;
   model?: string;
+  predictor?: string;
+  feature_extractor?: string;
 }
 
 export interface BehaviorSummary {
@@ -33,6 +36,7 @@ export interface BehaviorSummary {
   label: string;
   confidence: number;
   severity: Severity;
+  bbox?: [number, number, number, number] | number[] | null;
   recommendation?: string;
 }
 

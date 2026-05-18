@@ -20,6 +20,7 @@ def test_combine_exposes_current_behavior_and_fatigue_summaries():
                     "label_zh": "驾驶中使用手机",
                     "confidence": 0.93,
                     "severity": "high",
+                    "bbox": [10, 20, 100, 200],
                 }
             ],
             "risk_score": 70.0,
@@ -41,6 +42,7 @@ def test_combine_exposes_current_behavior_and_fatigue_summaries():
     assert result["current_behavior"]["algorithm_label"] == "行为识别"
     assert result["current_behavior"]["confidence"] == 0.93
     assert result["current_behavior"]["severity"] == "high"
+    assert result["current_behavior"]["bbox"] == [10, 20, 100, 200]
     assert result["current_fatigue"]["label"] == "打哈欠"
     assert result["current_fatigue"]["algorithm_label"] == "疲劳检测"
     assert result["current_fatigue"]["confidence"] == 0.81

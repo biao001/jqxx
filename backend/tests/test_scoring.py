@@ -37,6 +37,7 @@ def test_normalize_detection_maps_backend_event_to_ui_shape():
             "label_zh": "驾驶中使用手机",
             "confidence": 0.91,
             "severity": "high",
+            "bbox": [10, 20, 100, 200],
         },
         timestamp_seconds=12.4,
         prefix="behavior",
@@ -48,3 +49,4 @@ def test_normalize_detection_maps_backend_event_to_ui_shape():
     assert detection["timestamp"] == "00:12"
     assert detection["confidence"] == 0.91
     assert detection["severity"] == "high"
+    assert detection["bbox"] == [10, 20, 100, 200]
