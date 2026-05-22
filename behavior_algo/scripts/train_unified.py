@@ -43,6 +43,8 @@ def main():
     ap.add_argument("--name", default="exp")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--patience", type=int, default=15)
+    ap.add_argument("--workers", type=int, default=2,
+                    help="DataLoader workers; 8 太多会撑爆 /dev/shm 导致 OOM kill")
     args = ap.parse_args()
 
     if not DATA.exists():
@@ -62,6 +64,7 @@ def main():
         imgsz=args.imgsz,
         batch=args.batch,
         device=args.device,
+        workers=args.workers,
         project=str(RUNS),
         name=args.name,
         resume=args.resume,

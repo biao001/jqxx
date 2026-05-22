@@ -38,12 +38,15 @@ def _resolve(name: str) -> str:
     p = MODELS_DIR / name
     return str(p) if p.exists() else name
 
+UNIFIED_PT = MODELS_DIR / "unified.pt"
+BASE_PT = PROJECT_ROOT.parent / "yolov8n.pt"
+
 DETECTOR = BehaviorDetector(
-    yolo_weights=_resolve("yolov8n.pt"),
-    pose_weights=_resolve("yolov8n-pose.pt"),
-    seatbelt_weights=_resolve("seatbelt.pt") if (MODELS_DIR / "seatbelt.pt").exists() else None,
-    smoking_weights=_resolve("smoking.pt") if (MODELS_DIR / "smoking.pt").exists() else None,
+    unified_weights=str(UNIFIED_PT) if UNIFIED_PT.exists() else None,
+    base_weights=str(BASE_PT) if BASE_PT.exists() else "yolov8n.pt",
     device="cpu",
+    conf=0.30,
+    imgsz=448,
     temporal_window=5,
 )
 
@@ -334,5 +337,8 @@ with gr.Blocks(title="DMS · 行为识别算法 A") as demo:
 
 
 if __name__ == "__main__":
-    demo.launch(server_name="127.0.0.1", server_port=7860,
+    # 默认仅本机；想要局域网访问设 GRADIO_SERVER_NAME=0.0.0.0
+    server_name = os.environ.get("GRADIO_SERVER_NAME", "127.0.0.1")
+    server_port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
+    demo.launch(server_name=server_name, server_port=server_port,
                 inbrowser=False, theme=gr.themes.Soft())

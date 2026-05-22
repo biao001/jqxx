@@ -4,10 +4,11 @@ download_datasets.py — 从 Roboflow 批量下载 DMS 训练数据集
 需要环境变量:
   ROBOFLOW_API_KEY=<你的 Roboflow Private API Key>
 
-下载 3 个数据集（各自公开 CC BY 4.0）:
-  1. distracted-driving-yolov8 (yolov8-ei4l6)       → 5 类行为
-  2. cigarette-wkkgi           (yolov8-jymgm)       → 香烟
-  3. seatbelt-detection-lb1ec  (seatbelttraining-7yh0f) → 安全带
+下载 4 个数据集（CC BY 4.0 / Public Domain）:
+  1. distracted-driving-yolov8 (yolov8-ei4l6)        → 5 类基础驾驶分心
+  2. smoking-person-detection  (yolov8-svr4x)        → 2545 张 smoking（替代旧 cigarette）
+  3. seatbelt-detection        (seatbelttraining-7yh0f) → 安全带
+  4. distracted-driving-rz2wm  (test-jfqet)          → 8 类分心 (Public Domain)，补充 reach_behind/drinking
 
 下载完成后运行 scripts/merge_datasets.py 合并成统一 8 类数据集。
 """
@@ -20,9 +21,10 @@ OUT  = ROOT / "data" / "rf_datasets"
 
 DATASETS = [
     # (workspace, project, version, local_subdir)
-    ("yolov8-ei4l6",        "distracted-driving-yolov8", 6, "distracted_driving"),
-    ("yolov8-jymgm",        "cigarette-wkkgi",           5, "cigarette"),
-    ("seatbelttraining-7yh0f", "seatbelt-detection-lb1ec", 4, "seatbelt"),
+    # 主干：单一来源、标注统一、含 hands on/off wheel + 全部 DMS 动作
+    ("astrotabel",            "reckless-driver-detection-fh5rh", 1, "reckless"),
+    # 补充 no_seatbelt 正负样本（已人工筛过 146 张）
+    ("seatbelttraining-7yh0f","seatbelt-detection-lb1ec",        4, "seatbelt"),
 ]
 
 

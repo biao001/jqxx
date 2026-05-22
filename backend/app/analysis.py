@@ -68,13 +68,10 @@ class BehaviorRuntime:
             from behavior_detector import BehaviorDetector
 
             self.detector = BehaviorDetector(
-                yolo_weights="yolov8n.pt",
-                pose_weights="yolov8n-pose.pt",
-                seatbelt_weights=str(behavior_dir / "models" / "seatbelt.pt"),
-                smoking_weights=str(behavior_dir / "models" / "smoking.pt"),
                 unified_weights=str(behavior_dir / "models" / "unified.pt"),
+                base_weights=str(self.settings.repo_root / "yolov8n.pt"),
                 device="cpu",
-                imgsz=384,
+                imgsz=640,
             )
         except Exception as exc:
             self.load_error = str(exc)

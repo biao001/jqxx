@@ -21,3 +21,13 @@ behavior_algo/outputs/
 # Local DMS backend runtime and secrets
 backend/runtime/
 backend/.env
+
+# Python 虚拟环境
+.venv/
+
+# 训练运行产物
+behavior_algo/runs/
+
+# ultralytics 训练时自动下载到工作目录的预训练权重
+behavior_algo/yolov8n.pt
+behavior_algo/yolo26n.pt
