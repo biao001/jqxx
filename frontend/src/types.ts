@@ -8,11 +8,14 @@ export interface Detection {
   severity: Severity;
   source: 'behavior' | 'fatigue' | string;
   bbox?: [number, number, number, number] | number[];
+  vt?: number; // 客户端标注的发生时刻(秒)，用于列表点击跳转
 }
 
 export interface DrivingStats {
-  score: number;
+  score: number; // 综合评分
   status: string;
+  behavior_score?: number; // 驾驶行为评分
+  fatigue_score?: number; // 疲劳评分
   focus: number;
   reaction: number;
   compliance: number;
@@ -49,6 +52,15 @@ export interface FatigueSummary {
     yawn_score?: number;
     look_away_score?: number;
     fatigue_score?: number;
+  };
+  signals?: {
+    perclos?: number;
+    ear?: number;
+    eyes_closed?: boolean;
+    head_yaw?: number;
+    head_pitch?: number;
+    head_roll?: number;
+    gaze_zone?: string;
   };
 }
 

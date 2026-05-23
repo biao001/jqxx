@@ -35,6 +35,17 @@ from ultralytics import YOLO
 COCO_PERSON = 0
 COCO_CELL_PHONE = 67
 
+
+def _center_inside(inner, outer) -> bool:
+    """inner 框中心是否落在 outer 框内(含少量外扩容差)。用于手机须在人体范围内的空间约束。"""
+    if not inner or not outer:
+        return False
+    ix1, iy1, ix2, iy2 = inner
+    ox1, oy1, ox2, oy2 = outer
+    cx, cy = (ix1 + ix2) / 2, (iy1 + iy2) / 2
+    pad = 0.1 * max(1.0, ox2 - ox1)  # 边缘 10% 容差，避免贴边手机被误拒
+    return (ox1 - pad) <= cx <= (ox2 + pad) and (oy1 - pad) <= cy <= (oy2 + pad)
+
 SEVERITY_MAP = {
     "no_driver":        "critical",
     "phone_use":        "high",
@@ -249,9 +260,9 @@ class BehaviorDetector:
                 print(f"[Init] 加载手机确认模型(COCO): {base_weights}")
                 self.phone_verify = YOLO(str(bpath))
 
-        # deactivate=2：行为消失后约 2 帧即清除告警(配合提高帧率，bbox 不再长时间滞留)；
-        # activate 保持默认(出现需多帧确认，避免误报闪现)。
-        self.smoother = TemporalSmoother(window=temporal_window, deactivate=2)
+        # activate=2：行为出现 2 帧即确认上报(更及时，误报由置信度阈值兜底)；
+        # deactivate=2：消失约 2 帧即清除告警(bbox 不长时间滞留)。
+        self.smoother = TemporalSmoother(window=temporal_window, activate=2, deactivate=2)
 
         # 双手离盘状态机：默认在盘(安全)。检出离盘需连续 N 帧才告警(防抖)。
         self.hands_off_streak_min = 2
@@ -338,18 +349,25 @@ class BehaviorDetector:
         if self.mode == "unified":
             coco = self._coco_scan(infer_frame)
             events, raw, driver_present = self._from_unified(r, events, raw, coco)
-            # phone_use 以 COCO 检测为准：检到手机就报(带 bbox)，检不到则去掉 unified 误报
+            # phone_use 以 COCO 检测为准(彩色实时场景下 COCO 检手机最可靠)
             events = [e for e in events if e.type != "phone_use"]
             raw = [t for t in raw if t != "phone_use"]
-            if driver_present and coco["phone"] is not None and coco["phone"][1] >= self.phone_use_conf:
-                bbox, cf = coco["phone"]
+            phone, person = coco["phone"], coco["person"]
+            # 空间约束：手机中心须落在人体框内，过滤红外/背景暗区把杂物误判成手机
+            phone_ok = (
+                phone is not None
+                and phone[1] >= self.phone_use_conf
+                and person is not None
+                and _center_inside(phone[0], person[0])
+            )
+            if driver_present and phone_ok:
+                bbox, cf = phone
                 events.append(BehaviorEvent(
                     "phone_use", LABEL_ZH["phone_use"], cf,
                     bbox=bbox, severity=SEVERITY_MAP["phone_use"],
-                    evidence="COCO 检出 cell phone"))
+                    evidence="COCO 检出 cell phone(人体范围内)"))
                 raw.append("phone_use")
-                # 手机 / 饮水 / 进食 同属"手到面部"易混动作。COCO 已确认实体手机(强证据)，
-                # 抑制同帧的 drinking / eating 误报，避免两个框打架。
+                # 手机 / 饮水 / 进食 同属"手到面部"易混动作，确认手机后抑制后两者
                 events = [e for e in events if e.type not in ("drinking", "eating")]
                 raw = [t for t in raw if t not in ("drinking", "eating")]
         else:
@@ -398,7 +416,8 @@ class BehaviorDetector:
                 name = (self.class_names.get(cls_id) or "").lower()
                 if not name:
                     continue
-                # 按类分级阈值：smoking 放宽到 smoking_conf，其余类仍用 self.conf
+                # 按类分级阈值：smoking 放宽到 smoking_conf，其余类用 self.conf
+                # (phone_use 不在此判定，统一改由 COCO 实体手机检测驱动)
                 min_conf = self.smoking_conf if name == "smoking" else self.conf
                 if cf < min_conf:
                     continue

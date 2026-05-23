@@ -157,6 +157,8 @@ class FatigueRuntime:
         self.settings = settings
         self.window_size = window_size
         self.feature_window: deque[np.ndarray] = deque(maxlen=window_size)
+        # EAR 历史(约 3 秒)用于 PERCLOS 闭眼率统计
+        self.ear_history: deque[float] = deque(maxlen=90)
         self.predictor: Any | None = None
         self.predictor_error: str | None = None
         self.feature_error: str | None = None
@@ -320,7 +322,50 @@ class FatigueRuntime:
     def analyze_frame(self, frame: np.ndarray, frame_id: int, timestamp: float) -> dict[str, Any]:
         features = self.extract_features(frame, timestamp=timestamp)
         self.feature_window.append(features)
+        self.ear_history.append(float(features[0]))  # 累积 EAR 供 PERCLOS
         return self._predict_from_window(frame_id, timestamp)
+
+    # EAR 低于此值视为闭眼
+    EYE_CLOSED_EAR = 0.18
+
+    def _gaze_zone(self, yaw: float, pitch: float, ear: float) -> str:
+        if 0 < ear < 0.13:
+            return "闭眼"
+        if abs(pitch) > 18:
+            return "低头/点头"
+        if yaw > 20:
+            return "右顾"
+        if yaw < -20:
+            return "左盼"
+        return "前方"
+
+    def _observable_signals(self, window: np.ndarray) -> dict[str, Any]:
+        """从特征窗口 + EAR 历史导出可观测信号：PERCLOS、头部姿态、视线区域。"""
+        latest = window[-1]
+        ear, _mar, yaw, pitch, roll = (float(latest[i]) for i in range(5))
+        valid = [e for e in self.ear_history if e > 0]  # 0 表示无脸，剔除
+        perclos = sum(1 for e in valid if e < self.EYE_CLOSED_EAR) / len(valid) if valid else 0.0
+        return {
+            "perclos": round(perclos, 4),
+            "ear": round(ear, 4),
+            "eyes_closed": bool(0 < ear < self.EYE_CLOSED_EAR),
+            "head_yaw": round(yaw, 1),
+            "head_pitch": round(pitch, 1),
+            "head_roll": round(roll, 1),
+            "gaze_zone": self._gaze_zone(yaw, pitch, ear),
+        }
+
+    def _apply_perclos(self, result: dict[str, Any], signals: dict[str, Any]) -> dict[str, Any]:
+        """PERCLOS 是疲劳的金标准指标：持续闭眼占比过高时强制升级为高风险疲劳。"""
+        perclos = float(signals.get("perclos", 0.0))
+        if perclos >= 0.45:
+            result["risk_level"] = "high"
+            if result.get("label") in (None, "Normal", "Looking Around"):
+                result["label"] = "Fatigued Driving"
+            ind = dict(result.get("indicators") or {})
+            ind["fatigue_score"] = round(max(float(ind.get("fatigue_score", 0.0)), min(1.0, perclos + 0.3)), 4)
+            result["indicators"] = ind
+        return result
 
     def _predict_from_window(self, frame_id: int, timestamp: float) -> dict[str, Any]:
         if not self.feature_window:
@@ -331,13 +376,16 @@ class FatigueRuntime:
                 rows.append(rows[-1])
             window = np.stack(rows[-self.window_size :], axis=0)
 
+        signals = self._observable_signals(window)
+
         if self.predictor is not None:
             try:
                 result = self.predictor.predict_window(window, frame_id=frame_id, timestamp=timestamp)
                 result = self._merge_observable_scores(result, window)
                 self.last_mode = "model"
                 result["capability"] = self.capability()
-                return result
+                result["signals"] = signals
+                return self._apply_perclos(result, signals)
             except Exception as exc:
                 self.predictor_error = str(exc)
                 self.predictor = None
@@ -367,7 +415,7 @@ class FatigueRuntime:
         denominator = sum(public_scores.values())
         confidence = public_scores[label] / denominator if denominator > 0 else 0.0
         self.last_mode = "fallback"
-        return {
+        return self._apply_perclos({
             "module": "fatigue",
             "model_name": "fatigue_b_fallback",
             "frame_id": frame_id,
@@ -381,8 +429,9 @@ class FatigueRuntime:
             },
             "risk_level": risk_level,
             "public_scores": {key: round(float(value), 4) for key, value in public_scores.items()},
+            "signals": signals,
             "capability": self.capability(),
-        }
+        }, signals)
 
     def _merge_observable_scores(self, result: dict[str, Any], window: np.ndarray) -> dict[str, Any]:
         observed_yawn, observed_look, observed_fatigue = self._heuristic_scores(window)
@@ -701,6 +750,7 @@ class AnalysisService:
             "confidence": round(float(fatigue.get("confidence", 0.0)), 4),
             "risk_level": str(fatigue.get("risk_level", "low")),
             "indicators": fatigue.get("indicators", {}),
+            "signals": fatigue.get("signals", {}),
         }
 
     def _aggregate_video(

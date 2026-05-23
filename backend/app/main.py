@@ -8,11 +8,15 @@ from fastapi.responses import FileResponse
 
 from .analysis import AnalysisService, decode_image_bytes, encode_upload_name
 from .config import get_settings
+from . import storage
 
 
 settings = get_settings()
 settings.runtime_dir.mkdir(parents=True, exist_ok=True)
 service = AnalysisService(settings)
+
+SESSIONS_DB = settings.runtime_dir / "sessions.db"
+storage.init_db(SESSIONS_DB)
 
 app = FastAPI(title="DMS Local Backend", version="0.1.0")
 app.add_middleware(
@@ -68,6 +72,37 @@ def create_report(result: dict) -> dict:
         return service.write_result_report(result)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/sessions")
+def save_session(payload: dict) -> dict:
+    """保存一次行程会话(汇总 + 事件 + 评分曲线)。"""
+    try:
+        sid = storage.create_session(SESSIONS_DB, payload)
+        return {"id": sid}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/sessions")
+def list_sessions(limit: int = 50) -> dict:
+    return {"sessions": storage.list_sessions(SESSIONS_DB, limit=limit)}
+
+
+@app.get("/api/sessions/{session_id}")
+def get_session(session_id: str) -> dict:
+    data = storage.get_session(SESSIONS_DB, session_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return data
+
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str) -> dict:
+    ok = storage.delete_session(SESSIONS_DB, session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"deleted": True}
 
 
 @app.websocket("/ws/camera")

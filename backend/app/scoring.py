@@ -84,9 +84,17 @@ def compute_driving_stats(
     fatigue = int(round(clamp(100 - fatigue_risk)))
     stability = int(round(clamp(100 - behavior_risk * 0.25 - fatigue_risk * 0.25 - (0 if camera_ok else 25))))
 
+    # 驾驶行为评分(只看行为风险与违规严重度)；疲劳评分(只看疲劳风险)
+    behavior_score = int(round(clamp(
+        100 - behavior_risk * 0.7 - severity_penalty - (0 if driver_present else 25) - (0 if camera_ok else 20)
+    )))
+    fatigue_score = int(round(clamp(100 - fatigue_risk)))
+
     return {
-        "score": score,
+        "score": score,  # 综合评分(行为+疲劳加权)
         "status": status,
+        "behavior_score": behavior_score,
+        "fatigue_score": fatigue_score,
         "focus": focus,
         "reaction": reaction,
         "compliance": compliance,
