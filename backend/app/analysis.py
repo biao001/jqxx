@@ -543,6 +543,11 @@ class AnalysisService:
         frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         fps = float(capture.get(cv2.CAP_PROP_FPS) or 25.0)
         stride = self.settings.frame_stride
+        # 自适应步长：让 max_video_frames 个采样覆盖整段视频，而不是只分析开头
+        # （否则长视频后半段的行为，如靠后才出现的吸烟，会被 240 帧上限截断而漏掉）
+        if frame_count > 0:
+            need = -(-frame_count // self.settings.max_video_frames)  # ceil
+            stride = max(stride, need)
         sampled_results: list[dict[str, Any]] = []
         frame_id = 0
         processed = 0

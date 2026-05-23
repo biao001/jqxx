@@ -188,13 +188,13 @@ class BehaviorDetector:
         "smoking":         ("smoking",         "unified: smoking"),
         "drinking":        ("drinking",        "unified: drinking"),
         "eating":          ("eating",          "unified: eating"),
-        # 双手离盘直接检出即告警（样本充足，比反推 hand_on_wheel 可靠）
-        "hands_off_wheel": ("hands_off_wheel", "unified: hands_off_wheel"),
+        # hands_off_wheel 不在此直接告警，改走下方反逻辑（检出 hand_on_wheel 才安全）
     }
 
     # 走"默认告警 / 检出安全基线才解除"逻辑的成对类
     # 安全基线类名 -> (告警 behavior, 检出告警类名)
-    # 仅安全带：默认未系，检出 seatbelt 才解除。
+    # 安全带：默认未系，检出 seatbelt 才解除。
+    # 双手不走默认告警逻辑 —— 默认在盘(安全)，只有"在盘→离盘"迁移才告警(见 _hands_event)。
     _SAFE_BASELINE_PAIRS = {
         "seatbelt": ("no_seatbelt", "no_seatbelt"),
     }
@@ -211,9 +211,17 @@ class BehaviorDetector:
         temporal_window: int = 5,
         verify_phone: bool = True,
         phone_verify_conf: float = 0.15,
+        smoking_conf: float = 0.40,
+        phone_use_conf: float = 0.45,
     ):
         self.device = device
         self.conf = conf
+        # smoking 单独阈值（与 conf 解耦，可高可低）；推理时取两者较小值出框，
+        # 再在 _from_unified 里按 smoking_conf 过滤。
+        self.smoking_conf = smoking_conf
+        # phone_use 接受阈值：COCO 仍用低 phone_verify_conf 推理(保证 person 灵敏)，
+        # 但只有手机置信度 >= phone_use_conf 才上报，抑制误报。
+        self.phone_use_conf = phone_use_conf
         self.iou = iou
         self.imgsz = imgsz
         self.low_light_enhance = low_light_enhance
@@ -241,17 +249,39 @@ class BehaviorDetector:
                 print(f"[Init] 加载手机确认模型(COCO): {base_weights}")
                 self.phone_verify = YOLO(str(bpath))
 
-        self.smoother = TemporalSmoother(window=temporal_window)
+        # deactivate=2：行为消失后约 2 帧即清除告警(配合提高帧率，bbox 不再长时间滞留)；
+        # activate 保持默认(出现需多帧确认，避免误报闪现)。
+        self.smoother = TemporalSmoother(window=temporal_window, deactivate=2)
 
-    def _has_cell_phone(self, frame: np.ndarray) -> bool:
-        """用 COCO 模型判断帧内是否存在手机"""
+        # 双手离盘状态机：默认在盘(安全)。检出离盘需连续 N 帧才告警(防抖)。
+        self.hands_off_streak_min = 2
+        self._hands_off_streak = 0
+
+    def _coco_scan(self, frame: np.ndarray) -> Dict[str, Optional[Tuple[List[int], float]]]:
+        """COCO(yolov8n) 单次推理，返回最高 conf 的 person / cell phone (bbox, conf)。
+
+        unified.pt 没有 person 类，且对车外/通用场景的 phone_use 很弱，
+        因此用 COCO 通用模型补充：
+          - person → 真正判断驾驶位是否有人（替代"模型无输出=无人"的误判）
+          - cell phone → 直接驱动 phone_use（举手机即可识别，不再只做抑制）
+        """
+        out: Dict[str, Optional[Tuple[List[int], float]]] = {"person": None, "phone": None}
         if self.phone_verify is None:
-            return True  # 没有确认器则不拦截
+            return out
         r = self.phone_verify(frame, conf=self.phone_verify_conf, iou=self.iou,
                               imgsz=self.imgsz, verbose=False, device=self.device)[0]
         if r.boxes is None:
-            return False
-        return any(int(b.cls.item()) == COCO_CELL_PHONE for b in r.boxes)
+            return out
+        for b in r.boxes:
+            cid = int(b.cls.item())
+            key = "person" if cid == COCO_PERSON else "phone" if cid == COCO_CELL_PHONE else None
+            if key is None:
+                continue
+            cf = float(b.conf.item())
+            if out[key] is None or cf > out[key][1]:
+                xyxy = [int(v) for v in b.xyxy[0].cpu().numpy().tolist()]
+                out[key] = (xyxy, cf)
+        return out
 
     # ---------- 工具 ----------
 
@@ -300,16 +330,28 @@ class BehaviorDetector:
         infer_frame = frame
         if self.low_light_enhance and self._is_low_light(frame):
             infer_frame = self._enhance_low_light(frame)
-        r = self.model(infer_frame, conf=self.conf, iou=self.iou,
+        # 用较低阈值推理，保留 smoking 的弱检测；其余类在 _from_unified 里按 self.conf 过滤
+        r = self.model(infer_frame, conf=min(self.conf, self.smoking_conf), iou=self.iou,
                        imgsz=self.imgsz, verbose=False,
                        device=self.device)[0]
 
         if self.mode == "unified":
-            events, raw, driver_present = self._from_unified(r, events, raw)
-            # phone_use 需手机共现确认：没真检测到手机就抑制
-            if "phone_use" in raw and not self._has_cell_phone(infer_frame):
-                events = [e for e in events if e.type != "phone_use"]
-                raw = [t for t in raw if t != "phone_use"]
+            coco = self._coco_scan(infer_frame)
+            events, raw, driver_present = self._from_unified(r, events, raw, coco)
+            # phone_use 以 COCO 检测为准：检到手机就报(带 bbox)，检不到则去掉 unified 误报
+            events = [e for e in events if e.type != "phone_use"]
+            raw = [t for t in raw if t != "phone_use"]
+            if driver_present and coco["phone"] is not None and coco["phone"][1] >= self.phone_use_conf:
+                bbox, cf = coco["phone"]
+                events.append(BehaviorEvent(
+                    "phone_use", LABEL_ZH["phone_use"], cf,
+                    bbox=bbox, severity=SEVERITY_MAP["phone_use"],
+                    evidence="COCO 检出 cell phone"))
+                raw.append("phone_use")
+                # 手机 / 饮水 / 进食 同属"手到面部"易混动作。COCO 已确认实体手机(强证据)，
+                # 抑制同帧的 drinking / eating 误报，避免两个框打架。
+                events = [e for e in events if e.type not in ("drinking", "eating")]
+                raw = [t for t in raw if t not in ("drinking", "eating")]
         else:
             events, raw, driver_present = self._from_base(r, events, raw)
 
@@ -319,7 +361,33 @@ class BehaviorDetector:
 
     # ---------- 类别 → BehaviorEvent ----------
 
-    def _from_unified(self, r, events, raw):
+    def _hands_event(self, by_name, events, raw):
+        """双手在盘/离盘状态机。
+
+        默认在盘(安全)；检出 hand_on_wheel → 重置为安全；
+        检出 hands_off_wheel(且未同时检出 hand_on_wheel) → 视为"在盘→离盘"迁移，
+        需连续 hands_off_streak_min 帧才告警，避免瞬时误检导致频繁误报。
+        """
+        on_w = "hand_on_wheel" in by_name
+        off_w = "hands_off_wheel" in by_name
+        if on_w and not off_w:               # 明确在盘
+            self._hands_off_streak = 0
+            return
+        if off_w and not on_w:               # 明确离盘 → 累积迁移
+            self._hands_off_streak += 1
+            if self._hands_off_streak >= self.hands_off_streak_min:
+                cf, xyxy = by_name["hands_off_wheel"]
+                events.append(BehaviorEvent(
+                    "hands_off_wheel", LABEL_ZH["hands_off_wheel"], cf,
+                    bbox=[int(v) for v in xyxy],
+                    severity=SEVERITY_MAP["hands_off_wheel"],
+                    evidence="在盘→离盘 迁移"))
+                raw.append("hands_off_wheel")
+            return
+        # 两者都检出 / 都没检出 → 不明确，缓慢回落到安全
+        self._hands_off_streak = max(0, self._hands_off_streak - 1)
+
+    def _from_unified(self, r, events, raw, coco=None):
         """从 unified 8 类输出生成 BehaviorEvent 列表"""
         # 按类别名只保留最高 conf 的 bbox
         by_name: Dict[str, Tuple[float, List[float]]] = {}
@@ -330,18 +398,28 @@ class BehaviorDetector:
                 name = (self.class_names.get(cls_id) or "").lower()
                 if not name:
                     continue
+                # 按类分级阈值：smoking 放宽到 smoking_conf，其余类仍用 self.conf
+                min_conf = self.smoking_conf if name == "smoking" else self.conf
+                if cf < min_conf:
+                    continue
                 xyxy = box.xyxy[0].cpu().numpy().tolist()
                 if name not in by_name or cf > by_name[name][0]:
                     by_name[name] = (cf, xyxy)
 
-        # 完全无检测 → 驾驶位无人
+        # 完全无检测：unified 没有 person 类，不能直接当成"驾驶位无人"。
+        # 先用 COCO 模型确认画面里到底有没有人——有人则视为正常驾驶（无风险行为），
+        # 确实无人才报 no_driver，并带上真实人体缺失的判定。
         if not by_name:
-            events.append(BehaviorEvent(
-                "no_driver", LABEL_ZH["no_driver"], 0.9,
-                severity=SEVERITY_MAP["no_driver"],
-                evidence="unified 未检出任何类"))
-            raw.append("no_driver")
-            return events, raw, False
+            person = coco.get("person") if coco else None
+            if person is None:
+                events.append(BehaviorEvent(
+                    "no_driver", LABEL_ZH["no_driver"], 0.9,
+                    severity=SEVERITY_MAP["no_driver"],
+                    evidence="unified 未检出任何类，且 COCO 未检出 person"))
+                raw.append("no_driver")
+                return events, raw, False
+            # 有人但未检出具体行为 → 正常驾驶，不产生告警事件
+            return events, raw, True
 
         # 成对安全基线类（安全带 / 方向盘）走专门逻辑，普通动作类直接出事件
         baseline_names = set(self._SAFE_BASELINE_PAIRS)
@@ -361,7 +439,10 @@ class BehaviorDetector:
                 evidence=evidence))
             raw.append(btype)
 
-        # 安全带 / 双手离盘：默认告警，检出安全基线（seatbelt / hand_on_wheel）才解除
+        # 双手离盘：状态迁移逻辑（默认在盘=安全，仅"在盘→离盘"才告警）
+        self._hands_event(by_name, events, raw)
+
+        # 安全带：默认告警，检出 seatbelt 才解除
         for baseline, (alarm_type, alarm_name) in self._SAFE_BASELINE_PAIRS.items():
             if baseline in by_name:
                 cf, xyxy = by_name[baseline]

@@ -7,7 +7,7 @@ import UploadModal from './components/UploadModal';
 import { AnalysisResult, BehaviorSummary, Detection, DrivingStats, FatigueSummary } from './types';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-const CAMERA_FPS = Number(import.meta.env.VITE_CAMERA_FPS || 3);
+const CAMERA_FPS = Number(import.meta.env.VITE_CAMERA_FPS || 6);
 
 function websocketUrl(path: string) {
   const url = new URL(BACKEND_URL);
@@ -318,6 +318,28 @@ export default function App() {
         ? 'border-red-400/60 bg-red-500/25 text-red-50'
         : 'border-orange-300/60 bg-orange-500/25 text-orange-50';
 
+  // 当前帧所有带 bbox 的检测都画框（不再只画 current_behavior 一个），
+  // 否则像 smoking(medium) 这种被 high 行为盖过、又没框的 top 顶掉，框就永远不弹。
+  const sevBoxClass = (sev?: string): string => {
+    if (sev === 'critical' || sev === 'high') return 'border-red-400 shadow-[0_0_18px_rgba(248,113,113,0.65)]';
+    if (sev === 'medium') return 'border-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.6)]';
+    return 'border-sky-400 shadow-[0_0_18px_rgba(56,189,248,0.6)]';
+  };
+  const sevTagClass = (sev?: string): string => {
+    if (sev === 'critical' || sev === 'high') return 'bg-red-500';
+    if (sev === 'medium') return 'bg-amber-500';
+    return 'bg-sky-500';
+  };
+  const overlayBoxes = (latestResult?.detections || [])
+    .filter((d) => Array.isArray(d.bbox) && (d.bbox as number[]).length === 4)
+    .map((d, i) => ({
+      key: `${d.id ?? d.type}-${i}`,
+      style: videoBoxStyle(videoRef.current, d.bbox as number[]),
+      label: d.type,
+      severity: d.severity,
+    }))
+    .filter((b) => b.style);
+
   const realtimeOverlays = latestResult ? (
     <div className="absolute left-4 right-4 top-16 grid grid-cols-2 gap-3 pointer-events-none">
       <div className={`rounded-lg border px-4 py-3 backdrop-blur-md shadow-lg ${behaviorBadgeClass}`}>
@@ -391,16 +413,17 @@ export default function App() {
                             onLoadedMetadata={() => setBehaviorBoxStyle(videoBoxStyle(videoRef.current, currentBehavior?.bbox ?? null))}
                             playsInline
                           />
-                          {behaviorBoxStyle && currentBehavior && currentBehavior.severity !== 'none' && (
+                          {overlayBoxes.map((b) => (
                             <div
-                              className="absolute pointer-events-none border-2 border-red-400 shadow-[0_0_18px_rgba(248,113,113,0.65)]"
-                              style={behaviorBoxStyle}
+                              key={b.key}
+                              className={`absolute pointer-events-none border-2 ${sevBoxClass(b.severity)}`}
+                              style={b.style as CSSProperties}
                             >
-                              <div className="absolute left-0 top-0 -translate-y-full bg-red-500 px-2 py-0.5 text-[11px] font-bold text-white shadow">
-                                {currentBehavior.algorithm_label || '行为识别'} · {currentBehavior.label}
+                              <div className={`absolute left-0 top-0 -translate-y-full px-2 py-0.5 text-[11px] font-bold text-white shadow ${sevTagClass(b.severity)}`}>
+                                {b.label}
                               </div>
                             </div>
-                          )}
+                          ))}
                           {realtimeOverlays}
                           <div className="absolute top-4 left-4 flex gap-2">
                             <span className="px-3 py-1 bg-black/60 backdrop-blur-sm text-white text-xs font-bold rounded flex items-center gap-2">

@@ -33,6 +33,8 @@ RUNS = ROOT / "runs" / "unified"
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default=str(DATA),
+                    help="数据集 data.yaml 路径(默认 dms_unified；重训用 data/reckless_mapped/data.yaml)")
     ap.add_argument("--base", default="yolov8n.pt",
                     help="基础权重 (yolov8n/s/m.pt)")
     ap.add_argument("--epochs", type=int, default=40)
@@ -47,19 +49,21 @@ def main():
                     help="DataLoader workers; 8 太多会撑爆 /dev/shm 导致 OOM kill")
     args = ap.parse_args()
 
-    if not DATA.exists():
+    data_path = Path(args.data)
+    if not data_path.exists():
         raise SystemExit(
-            f"[!] {DATA} 不存在，请先运行 python scripts/merge_datasets.py")
+            f"[!] {data_path} 不存在，请先准备数据集 "
+            f"(reckless 重训: python scripts/build_reckless_mapped.py)")
 
     MODELS.mkdir(exist_ok=True)
 
     print(f"[train] base={args.base}")
-    print(f"[train] data={DATA}")
+    print(f"[train] data={data_path}")
     print(f"[train] epochs={args.epochs}  imgsz={args.imgsz}  device={args.device}")
 
     model = YOLO(args.base)
     model.train(
-        data=str(DATA),
+        data=str(data_path),
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,

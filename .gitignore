@@ -31,3 +31,12 @@ behavior_algo/runs/
 # ultralytics 训练时自动下载到工作目录的预训练权重
 behavior_algo/yolov8n.pt
 behavior_algo/yolo26n.pt
+behavior_algo/yolov8s.pt
+behavior_algo/models/yolov8s.pt
+
+# 派生训练集(由 scripts/build_reckless_mapped.py 生成，含指向 rf_datasets 的符号链接)
+behavior_algo/data/reckless_mapped/
+
+# 模型备份(本地用，不入库)
+behavior_algo/models/*.backup.pt
+behavior_algo/models/unified.trial*.pt
