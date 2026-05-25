@@ -31,24 +31,13 @@ export default function ControlPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-xs font-bold text-outline uppercase">行为识别</div>
-          <div className="font-semibold text-slate-800">最终版行为识别算法</div>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-xs font-bold text-outline uppercase">疲劳检测</div>
-          <div className="font-semibold text-slate-800">最终版疲劳检测算法</div>
-        </div>
-      </div>
-
       <div className="flex items-center justify-between gap-4 py-4 border-y border-slate-100">
         <div className="flex gap-4">
           <button onClick={onUpload} className="btn-secondary px-8 py-4 text-lg" disabled={isAnalyzing || isCameraActive}>
             <Upload size={24} className="text-slate-500" />
             上传视频
           </button>
-          <button onClick={onToggleCamera} className="btn-secondary px-8 py-4 text-lg" disabled={isAnalyzing}>
+          <button onClick={onToggleCamera} className="btn-secondary px-8 py-4 text-lg" disabled={isAnalyzing && !isCameraActive}>
             {isCameraActive ? <Square size={24} className="text-red-500" /> : <Camera size={24} className="text-slate-500" />}
             {isCameraActive ? '停止相机' : '实时相机'}
           </button>

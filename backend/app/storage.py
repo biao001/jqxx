@@ -78,6 +78,45 @@ def get_session(db_path: Path, sid: str) -> dict[str, Any] | None:
     return json.loads(row["payload"]) if row else None
 
 
+def get_stats(db_path: Path) -> dict[str, Any]:
+    """跨会话聚合统计：总览、按天评分趋势、违规事件频次。"""
+    rows = list_sessions(db_path, limit=1000)
+    empty = {"total_sessions": 0, "total_duration": 0, "avg_score": 0, "total_events": 0,
+             "by_day": [], "event_freq": [], "recent_scores": []}
+    if not rows:
+        return empty
+    total_dur = sum(r["duration"] for r in rows)
+    avg_score = round(sum(r["score_avg"] for r in rows) / len(rows))
+    total_events = sum(r["events_count"] for r in rows)
+
+    # 按天平均评分
+    by_day: dict[str, list[float]] = {}
+    for r in rows:
+        day = time.strftime("%m-%d", time.localtime(r["created_at"]))
+        by_day.setdefault(day, []).append(r["score_avg"])
+    day_series = [{"day": d, "score": round(sum(v) / len(v))} for d, v in sorted(by_day.items())][-14:]
+
+    # 违规事件频次(解析各会话 payload 的 events)
+    freq: dict[str, int] = {}
+    for r in rows[:300]:
+        full = get_session(db_path, r["id"]) or {}
+        for ev in full.get("events", []) or []:
+            label = ev.get("label", "未知")
+            freq[label] = freq.get(label, 0) + 1
+    event_freq = sorted(({"label": k, "count": v} for k, v in freq.items()), key=lambda x: -x["count"])[:8]
+
+    recent_scores = [round(r["score_avg"]) for r in rows[:20]][::-1]
+    return {
+        "total_sessions": len(rows),
+        "total_duration": round(total_dur),
+        "avg_score": avg_score,
+        "total_events": total_events,
+        "by_day": day_series,
+        "event_freq": event_freq,
+        "recent_scores": recent_scores,
+    }
+
+
 def delete_session(db_path: Path, sid: str) -> bool:
     if not db_path.exists():
         return False

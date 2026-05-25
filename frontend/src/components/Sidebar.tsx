@@ -1,8 +1,21 @@
+import { type ReactNode, useState } from 'react';
 import { motion } from 'motion/react';
-import { AlertTriangle, BrainCircuit, Coffee, Download, EyeOff, Hourglass, List as ListIcon, Play, Radar, Smartphone } from 'lucide-react';
+import { Activity, AlertTriangle, BrainCircuit, Coffee, Download, EyeOff, Hourglass, List as ListIcon, type LucideIcon, Play, Smartphone } from 'lucide-react';
 import { AnalysisResult, Detection, DrivingStats } from '../types';
 import ScoreGauge from './ScoreGauge';
 import MetricsRadar from './MetricsRadar';
+import ScoreTrend from './ScoreTrend';
+
+function SectionTitle({ icon: Icon, title, children }: { icon?: LucideIcon; title: string; children?: ReactNode }) {
+  return (
+    <div className="w-full flex items-center gap-2.5 mb-3 pb-2.5 border-b border-outline-variant/60">
+      <span className="w-1 h-5 rounded-full bg-gradient-to-b from-primary to-primary-container" />
+      {Icon && <Icon size={17} className="text-primary" />}
+      <h3 className="font-display text-lg font-bold text-on-surface">{title}</h3>
+      <div className="ml-auto flex items-center gap-2 text-xs">{children}</div>
+    </div>
+  );
+}
 
 interface SidebarProps {
   stats: DrivingStats | null;
@@ -14,6 +27,7 @@ interface SidebarProps {
   currentTime: number;
   seekable: boolean;
   onSeek: (t: number) => void;
+  scoreHistory: number[];
 }
 
 function iconForDetection(type: string) {
@@ -58,7 +72,7 @@ function fmtSec(s?: number): string | null {
   return `${m}:${ss.toString().padStart(2, '0')}`;
 }
 
-export default function Sidebar({ stats, detections, analysisText, isAnalyzing, latestResult, onDownloadReport, currentTime, seekable, onSeek }: SidebarProps) {
+export default function Sidebar({ stats, detections, analysisText, isAnalyzing, latestResult, onDownloadReport, currentTime, seekable, onSeek, scoreHistory }: SidebarProps) {
   const capabilityMode = latestResult?.capabilities.behavior?.mode || latestResult?.capabilities.fatigue?.mode;
   // 找到与当前播放头最接近的检测条目用于高亮(只在可跳转/已记录 vt 时)
   const activeId = (() => {
@@ -71,13 +85,22 @@ export default function Sidebar({ stats, detections, analysisText, isAnalyzing, 
     return best?.id ?? null;
   })();
 
-  return (
-    <div className="w-[380px] shrink-0 flex flex-col gap-gutter h-full">
-      <div className="card p-6 flex flex-col items-center justify-center relative overflow-hidden shrink-0">
-        <h3 className="font-display text-xl font-bold text-on-surface mb-2 w-full text-left border-b border-outline-variant pb-2">驾驶状态评分</h3>
+  const [filter, setFilter] = useState<'all' | 'behavior' | 'fatigue' | 'risk'>('all');
+  const filtered = [...detections].reverse().filter((d) =>
+    filter === 'all'
+      ? true
+      : filter === 'risk'
+        ? d.severity === 'high' || d.severity === 'critical'
+        : d.source === filter,
+  );
 
-        <div className="w-full flex flex-col items-center mt-2 -mb-1">
-          <ScoreGauge score={stats ? stats.score : null} size={236} />
+  return (
+    <div className="w-[360px] shrink-0 flex flex-col gap-gutter h-full overflow-y-auto overflow-x-hidden">
+      <div className="card p-6 flex flex-col items-center relative overflow-hidden shrink-0">
+        <SectionTitle icon={Activity} title="驾驶状态评分" />
+
+        <div className="w-full flex flex-col items-center mt-1 -mb-1">
+          <ScoreGauge score={stats ? stats.score : null} size={200} />
           <span className="text-xs font-bold text-slate-400 -mt-2 tracking-widest">综合评分</span>
         </div>
 
@@ -106,16 +129,45 @@ export default function Sidebar({ stats, detections, analysisText, isAnalyzing, 
             ))}
           </div>
         )}
+
+        {stats && (
+          <div className="w-full mt-4 pt-3 border-t border-outline-variant/40 flex flex-col items-center">
+            <span className="text-[11px] font-bold text-slate-400 tracking-widest mb-0.5">实时五维状态</span>
+            <MetricsRadar stats={stats} size={150} />
+          </div>
+        )}
       </div>
 
-      <div className="card p-4 flex flex-col min-h-0 overflow-hidden" style={{ height: '280px' }}>
-        <h3 className="font-display text-lg font-bold text-on-surface mb-3 border-b border-outline-variant pb-2 flex items-center justify-between">
-          <span>检测结果列表</span>
-          <span className="text-xs font-medium text-outline">{detections.length} 条{seekable ? ' · 点击跳转' : ''}</span>
-        </h3>
-        {detections.length > 0 ? (
-          <div className="overflow-y-auto flex-1 pr-2 space-y-2">
-            {[...detections].reverse().map((d) => {
+      <div className="card p-4 shrink-0">
+        <SectionTitle icon={Activity} title="实时评分趋势" />
+        <ScoreTrend history={scoreHistory} />
+      </div>
+
+      <div className="card p-4 flex flex-col min-h-0 overflow-hidden shrink-0" style={{ height: '224px' }}>
+        <SectionTitle icon={ListIcon} title="检测结果列表">
+          <span className="text-outline">{filtered.length} 条{seekable ? ' · 点击跳转' : ''}</span>
+        </SectionTitle>
+        <div className="flex gap-1.5 mb-2 pb-2 border-b border-outline-variant">
+          {([
+            ['all', '全部'],
+            ['behavior', '行为'],
+            ['fatigue', '疲劳'],
+            ['risk', '高危'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                filter === key ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {filtered.length > 0 ? (
+          <div className="overflow-y-auto overflow-x-hidden flex-1 pr-2 space-y-2">
+            {filtered.map((d) => {
               const Icon = iconForDetection(d.type);
               const canJump = seekable && d.vt != null;
               const active = d.id === activeId;
@@ -157,35 +209,18 @@ export default function Sidebar({ stats, detections, analysisText, isAnalyzing, 
         )}
       </div>
 
-      <div className="card p-4 flex flex-col min-h-0 flex-1 overflow-hidden">
-        <h3 className="font-display text-lg font-bold text-on-surface mb-3 border-b border-outline-variant pb-2">大模型分析区</h3>
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="relative flex items-center justify-center bg-surface-container-low rounded-lg border border-outline-variant/30 shrink-0 mb-4 py-2 min-h-[176px]">
-            {stats ? (
-              <MetricsRadar stats={stats} size={200} />
-            ) : (
-              <div className="h-40 flex flex-col items-center justify-center text-slate-300">
-                <Radar size={32} className="mb-1" />
-                <p className="text-[10px] font-bold uppercase tracking-tight">实时五维状态</p>
-              </div>
-            )}
-            {capabilityMode === 'fallback' && (
-              <p className="absolute bottom-1 right-2 text-[10px] text-orange-500">部分模型回退</p>
-            )}
-          </div>
-
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 p-4 bg-slate-50/50 rounded-lg border border-dashed border-outline-variant overflow-y-auto">
-              <div className="flex items-start gap-2 text-sm text-outline leading-relaxed">
-                <BrainCircuit size={18} className="shrink-0 text-primary mt-0.5" />
-                <p>{analysisText || (isAnalyzing ? '正在基于真实检测结果生成分析。' : '等待真实检测数据。')}</p>
-              </div>
-            </div>
-          </div>
+      <div className="card p-4 flex flex-col shrink-0" style={{ height: '240px' }}>
+        <SectionTitle icon={BrainCircuit} title="大模型分析">
+          {capabilityMode === 'fallback' && <span className="text-[10px] text-orange-500 font-normal">部分模型回退</span>}
+        </SectionTitle>
+        <div className="flex-1 min-h-0 p-4 bg-gradient-to-br from-blue-50/50 to-slate-50/50 rounded-xl border border-primary/10 overflow-y-auto">
+          <p className="text-sm text-on-surface-variant leading-relaxed whitespace-pre-wrap">
+            {analysisText || (isAnalyzing ? '正在基于真实检测结果生成分析…' : '等待真实检测数据。开始分析后，这里将显示大模型对驾驶状态的实时点评与建议。')}
+          </p>
         </div>
       </div>
 
-      <button className="w-full btn-secondary mt-auto" disabled={!latestResult} onClick={onDownloadReport}>
+      <button className="w-full btn-secondary shrink-0" disabled={!latestResult} onClick={onDownloadReport}>
         <Download size={20} />
         下载结果报告
       </button>

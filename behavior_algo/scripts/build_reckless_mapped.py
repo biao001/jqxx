@@ -29,6 +29,9 @@ NAME2ID = {n: i for i, n in enumerate(NAMES)}
 PHONE_ID = NAME2ID["phone_use"]
 IMG_EXT = (".jpg", ".jpeg", ".png", ".bmp")
 
+# 标注框面积(占整图比例)超过此值视为错标(几乎整张图)，构建时丢弃
+MAX_BOX_AREA = 0.85
+
 # 主干 reckless: 原 id -> 目标类名(不在表中的丢弃)
 RECKLESS_MAP = {
     0: "smoking", 1: "drinking", 2: "eating", 3: "hands_off_wheel",
@@ -78,6 +81,8 @@ def build_reckless(cls_cnt):
                     old = int(p[0])
                     if old not in RECKLESS_MAP:
                         continue
+                    if float(p[3]) * float(p[4]) > MAX_BOX_AREA:  # 丢弃几乎整张图的错标
+                        continue
                     nid = NAME2ID[RECKLESS_MAP[old]]
                     out.append(" ".join([str(nid)] + p[1:]))
                     cls_cnt[split][nid] += 1
@@ -119,7 +124,7 @@ def supplement_phone(ds_name, cls_cnt):
                 if tgt is None:
                     continue                      # 非目标行为(Distracted 等)忽略
                 targets.add(tgt)
-                if tgt == "phone_use":
+                if tgt == "phone_use" and float(p[3]) * float(p[4]) <= MAX_BOX_AREA:
                     phone_lines.append(" ".join([str(PHONE_ID)] + p[1:]))
             # 仅当唯一目标行为是手机时收录(避免漏标其它行为)
             if targets == {"phone_use"} and phone_lines:

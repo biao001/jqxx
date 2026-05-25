@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, Trash2, X } from 'lucide-react';
+import { Clock, Sparkles, Trash2, X } from 'lucide-react';
 
 interface SessionRow {
   id: string;
@@ -48,6 +48,8 @@ export default function HistoryModal({ open, onClose, backendUrl }: Props) {
   const [list, setList] = useState<SessionRow[]>([]);
   const [sel, setSel] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [review, setReview] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState(false);
 
   const refresh = () => {
     setLoading(true);
@@ -67,8 +69,23 @@ export default function HistoryModal({ open, onClose, backendUrl }: Props) {
 
   if (!open) return null;
 
-  const openDetail = (id: string) =>
+  const openDetail = (id: string) => {
+    setReview(null);
     fetch(`${backendUrl}/api/sessions/${id}`).then((r) => r.json()).then(setSel).catch(() => {});
+  };
+  const genReview = () => {
+    if (!sel) return;
+    setReviewing(true);
+    fetch(`${backendUrl}/api/llm/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary: sel }),
+    })
+      .then((r) => r.json())
+      .then((d) => setReview(d.review || '点评生成失败'))
+      .catch(() => setReview('点评生成失败'))
+      .finally(() => setReviewing(false));
+  };
   const del = (id: string) =>
     fetch(`${backendUrl}/api/sessions/${id}`, { method: 'DELETE' }).then(() => {
       if (sel?.id === id) setSel(null);
@@ -152,6 +169,24 @@ export default function HistoryModal({ open, onClose, backendUrl }: Props) {
                     </span>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-bold text-slate-600">AI 驾驶点评</span>
+                  <button
+                    onClick={genReview}
+                    disabled={reviewing}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <Sparkles size={13} /> {reviewing ? '生成中…' : review ? '重新生成' : '生成 AI 点评'}
+                  </button>
+                </div>
+                {review && (
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                    {review}
+                  </div>
+                )}
               </div>
 
               <button onClick={() => del(sel.id)} className="text-xs text-red-500 hover:text-red-600 flex items-center gap-1">

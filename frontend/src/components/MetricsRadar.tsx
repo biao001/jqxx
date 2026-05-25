@@ -26,8 +26,11 @@ export default function MetricsRadar({ stats, size = 200 }: Props) {
   const gridLevels = [0.25, 0.5, 0.75, 1];
   const valuePts = AXES.map(({ key }, i) => pt(i, R * (((stats?.[key] as number) ?? 0) / 100)));
 
+  const padX = 42;
+  const padY = 14;
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="w-full" style={{ maxWidth: size }}>
+    <svg viewBox={`${-padX} ${-padY} ${size + 2 * padX} ${size + 2 * padY}`} className="w-full" style={{ maxWidth: size + 2 * padX }}>
+
       {/* 网格 */}
       {gridLevels.map((lv) => (
         <polygon

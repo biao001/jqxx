@@ -74,8 +74,10 @@ export interface AnalysisResult {
   timestamp: number;
   stats: DrivingStats;
   detections: Detection[];
+  frame_detections?: Detection[]; // 当前帧检测(画 bbox 用，每类仅一框)
   current_behavior?: BehaviorSummary;
   current_fatigue?: FatigueSummary;
+  driver?: { name: string | null; status: string; distance?: number };
   llm_analysis: string;
   report_url: string | null;
   capabilities: {

@@ -46,15 +46,15 @@
 
 @layer components {
   .card {
-    @apply bg-surface-container-lowest border border-outline-variant rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.06)];
+    @apply bg-surface-container-lowest border border-outline-variant/55 rounded-2xl shadow-[0_8px_30px_-10px_rgba(15,23,42,0.16)];
   }
-  
+
   .btn-primary {
-    @apply bg-primary text-white font-semibold rounded-lg px-6 py-3 hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2;
+    @apply bg-gradient-to-r from-primary to-primary-container text-white font-semibold rounded-xl px-6 py-3 shadow-lg shadow-primary/25 hover:brightness-110 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2;
   }
 
   .btn-secondary {
-    @apply bg-surface-container text-on-surface border border-outline-variant font-semibold rounded-lg px-6 py-3 hover:bg-surface-container-high transition-all active:scale-95 flex items-center justify-center gap-2;
+    @apply bg-surface-container text-on-surface border border-outline-variant font-semibold rounded-lg px-6 py-3 hover:bg-surface-container-high transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-surface-container flex items-center justify-center gap-2;
   }
 
   .input-label {

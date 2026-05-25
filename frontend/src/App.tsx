@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Bell, BellOff, Film, History as HistoryIcon, Settings as SettingsIcon, UserCircle } from 'lucide-react';
+import { AlertCircle, BarChart3, Bell, BellOff, Bot, Camera, Database, Film, History as HistoryIcon, IdCard, LogOut, Maximize2, Settings as SettingsIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import Sidebar from './components/Sidebar';
 import ControlPanel from './components/ControlPanel';
@@ -10,13 +10,21 @@ import VideoHud from './components/VideoHud';
 import DriverStatusBar, { DriverStatus } from './components/DriverStatusBar';
 import Toasts from './components/Toasts';
 import HistoryModal from './components/HistoryModal';
+import SnapshotGallery, { Snapshot } from './components/SnapshotGallery';
+import AiChatModal from './components/AiChatModal';
+import DriverModal from './components/DriverModal';
+import InfoSidebar from './components/InfoSidebar';
+import LandingPage from './components/LandingPage';
+import AuthPage from './components/AuthPage';
+import StatsDashboard from './components/StatsDashboard';
+import ModelDataPage from './components/ModelDataPage';
 import { useDriverAlerts } from './lib/useDriverAlerts';
 import { AnalysisResult, BehaviorSummary, Detection, DrivingStats, FatigueSummary, Severity } from './types';
 
 const SEV_RANK: Record<Severity, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-const CAMERA_FPS = Number(import.meta.env.VITE_CAMERA_FPS || 10); // 上限帧率；实际由后端处理速度自适应
+const CAMERA_FPS = Number(import.meta.env.VITE_CAMERA_FPS || 13); // 上限帧率；实际由后端处理速度自适应
 
 function websocketUrl(path: string) {
   const url = new URL(BACKEND_URL);
@@ -77,6 +85,8 @@ export default function App() {
   const [videoTime, setVideoTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [sessionEvents, setSessionEvents] = useState<TimelineEvent[]>([]);
+  const [scoreHistory, setScoreHistory] = useState<number[]>([]);
+  const [drivingSeconds, setDrivingSeconds] = useState(0);
   const [toasts, setToasts] = useState<{ id: string; label: string; severity: Severity }[]>([]);
 
   const sessionStartRef = useRef(0);
@@ -88,6 +98,14 @@ export default function App() {
   const sessionEventsRef = useRef<TimelineEvent[]>([]);
   const sessionSourceRef = useRef('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [driverModalOpen, setDriverModalOpen] = useState(false);
+  const [view, setView] = useState<'landing' | 'login' | 'app' | 'dashboard' | 'modeldata'>('landing');
+  const [user, setUser] = useState<string | null>(() => localStorage.getItem('dms_user'));
+  const snapCooldownRef = useRef<Record<string, number>>({});
+  const playerRef = useRef<HTMLDivElement | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -106,6 +124,8 @@ export default function App() {
     sessionStartRef.current = 0;
     scoreSeriesRef.current = [];
     sessionEventsRef.current = [];
+    snapCooldownRef.current = {};
+    setSnapshots([]);
     setDetections([]);
     setStats(null);
     setLatestResult(null);
@@ -114,7 +134,47 @@ export default function App() {
     setBehaviorBoxStyle(null);
     setAnalysisText('');
     setSessionEvents([]);
+    setScoreHistory([]);
     setVideoTime(0);
+    setDrivingSeconds(0);
+  }, []);
+
+  const captureSnapshot = useCallback((label: string, severity: Severity, t: number) => {
+    const v = videoRef.current;
+    if (!v || v.videoWidth === 0) return;
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    const barH = Math.max(28, Math.round(c.height * 0.06));
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, c.height - barH, c.width, barH);
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(barH * 0.5)}px sans-serif`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${label} · ${new Date().toLocaleTimeString('zh-CN')}`, 10, c.height - barH / 2);
+    const url = c.toDataURL('image/jpeg', 0.8);
+    setSnapshots((prev) => [{ id: `snap-${Date.now()}`, url, label, severity, t, wall: Date.now() }, ...prev].slice(0, 24));
+  }, []);
+
+  // 采集 n 帧当前画面(用于车主登记)
+  const captureFrames = useCallback(async (n: number): Promise<string[]> => {
+    const v = videoRef.current;
+    if (!v || v.videoWidth === 0) return [];
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    const ctx = c.getContext('2d');
+    if (!ctx) return [];
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) {
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      out.push(c.toDataURL('image/jpeg', 0.85));
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return out;
   }, []);
 
   const updateFromResult = useCallback((result: AnalysisResult) => {
@@ -142,6 +202,7 @@ export default function App() {
         fatigue: result.stats.fatigue_score ?? 0,
       });
       if (scoreSeriesRef.current.length > 1200) scoreSeriesRef.current.shift();
+      setScoreHistory((h) => [...h, result.stats.score].slice(-60));
     }
 
     // 给每条检测打上发生时刻，列表可点击跳转
@@ -171,13 +232,21 @@ export default function App() {
         const ev = { id, t, label: d.type, severity: sev };
         sessionEventsRef.current.push(ev);
         setSessionEvents((prev) => [...prev, ev].slice(-200));
+        // 高危行为(high/critical)自动抓拍证据帧，每类 5 秒冷却防刷屏
+        if ((SEV_RANK[sev] ?? 0) >= 3) {
+          const now = performance.now();
+          if (now - (snapCooldownRef.current[key] || 0) > 5000) {
+            snapCooldownRef.current[key] = now;
+            captureSnapshot(d.type, sev, t);
+          }
+        }
         // 弹出实时事件提示，3.8s 后自动消失
         setToasts((prev) => [...prev, { id, label: d.type, severity: sev }].slice(-4));
         window.setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 3800);
       }
     }
     activeTypesRef.current = current;
-  }, []);
+  }, [captureSnapshot]);
 
   const alert = useDriverAlerts(latestResult, !alertsMuted);
 
@@ -223,6 +292,37 @@ export default function App() {
     window.addEventListener('resize', updateBox);
     return () => window.removeEventListener('resize', updateBox);
   }, [currentBehavior?.bbox, selectedVideoUrl, isCameraActive]);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = playerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else el.requestFullscreen?.();
+  }, []);
+
+  // 键盘快捷键：空格 播放/暂停，M 静音切换，F 全屏，C 抓拍
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.code === 'Space' && selectedVideoUrl && !isCameraActive) {
+        const v = videoRef.current;
+        if (v) {
+          e.preventDefault();
+          if (v.paused) void v.play();
+          else v.pause();
+        }
+      } else if (e.key === 'm' || e.key === 'M') {
+        setSettings((s) => ({ ...s, voice: !s.voice }));
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      } else if (e.key === 'c' || e.key === 'C') {
+        captureSnapshot('手动抓拍', 'none', videoRef.current?.currentTime ?? 0);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedVideoUrl, isCameraActive, toggleFullscreen, captureSnapshot]);
 
   // 跟踪视频播放时间(播放头)与时长，供事件时间轴定位/跳转
   useEffect(() => {
@@ -490,7 +590,7 @@ export default function App() {
 
   // 当前帧所有带 bbox 的检测都画框（不再只画 current_behavior 一个），
   // 否则像 smoking(medium) 这种被 high 行为盖过、又没框的 top 顶掉，框就永远不弹。
-  const overlayBoxes = (latestResult?.detections || [])
+  const overlayBoxes = (latestResult?.frame_detections ?? latestResult?.detections ?? [])
     .filter((d) => Array.isArray(d.bbox) && (d.bbox as number[]).length === 4)
     .map((d, i) => ({
       key: `${d.id ?? d.type}-${i}`,
@@ -518,6 +618,35 @@ export default function App() {
 
   const sevHex = (sev?: string): string =>
     sev === 'critical' || sev === 'high' ? '#f87171' : sev === 'medium' ? '#fbbf24' : '#38bdf8';
+
+  // 左侧信息栏：当前帧的行为(用于交规提醒) + 行驶计时
+  const activeBehaviors = useMemo(() => {
+    const types = (latestResult?.frame_detections ?? []).map((d) => d.type);
+    const fat = latestResult?.current_fatigue;
+    if (fat && fat.risk_level !== 'low' && fat.label) types.push(fat.label);
+    return types;
+  }, [latestResult]);
+
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    const t = window.setInterval(() => setDrivingSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [isAnalyzing]);
+
+  // 提供给 AI 问答的当前驾驶数据上下文
+  const chatContext = useMemo(
+    () => ({
+      综合评分: stats?.score,
+      状态: stats?.status,
+      驾驶行为评分: stats?.behavior_score,
+      疲劳评分: stats?.fatigue_score,
+      当前行为: currentBehavior?.label,
+      当前疲劳: currentFatigue?.label,
+      疲劳信号: currentFatigue?.signals,
+      近期事件: sessionEvents.slice(-12).map((e) => ({ 行为: e.label, 严重度: e.severity })),
+    }),
+    [stats, currentBehavior, currentFatigue, sessionEvents],
+  );
 
   const realtimeOverlays = latestResult ? (
     <div className="absolute left-4 right-4 top-16 grid grid-cols-2 gap-3 pointer-events-none">
@@ -560,12 +689,28 @@ export default function App() {
     </div>
   ) : null;
 
+  if (view === 'landing') {
+    return <LandingPage loggedIn={!!user} user={user} onEnter={() => setView(user ? 'app' : 'login')} />;
+  }
+  if (view === 'login') {
+    return <AuthPage onSuccess={(u) => { setUser(u); setView('app'); }} onBack={() => setView('landing')} />;
+  }
+  if (view === 'dashboard') {
+    return <StatsDashboard backendUrl={BACKEND_URL} onBack={() => setView('app')} />;
+  }
+  if (view === 'modeldata') {
+    return <ModelDataPage backendUrl={BACKEND_URL} onBack={() => setView('app')} />;
+  }
+
   return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-100 py-4 font-sans antialiased">
-      <div className="w-[1280px] h-[1065px] bg-surface text-on-surface flex flex-col shadow-2xl overflow-hidden rounded-xl border border-outline-variant relative">
-        <header className="bg-white px-6 h-16 border-b border-outline-variant flex justify-between items-center z-50 shrink-0">
-          <div className="flex items-center gap-6">
-            <h1 className="text-2xl font-bold font-display tracking-tight text-slate-900">驾驶状态推演与行为测算平台</h1>
+    <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-200 via-slate-100 to-blue-100/50 p-3 font-sans antialiased">
+      <div className="w-full max-w-[1720px] h-full max-h-[1100px] bg-surface text-on-surface flex flex-col shadow-2xl overflow-hidden rounded-2xl border border-white/60 relative">
+        <header className="bg-gradient-to-r from-white via-white to-blue-50/60 px-6 h-16 border-b border-outline-variant/60 flex justify-between items-center z-50 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary-container flex items-center justify-center shadow-md shadow-primary/30">
+              <Film size={18} className="text-white" />
+            </div>
+            <h1 className="text-2xl font-bold font-display tracking-tight bg-gradient-to-r from-slate-900 to-primary bg-clip-text text-transparent">驾驶状态推演与行为测算平台</h1>
           </div>
           <div className="flex items-center gap-4 text-primary relative">
             <button
@@ -576,11 +721,51 @@ export default function App() {
               {alertsMuted ? <BellOff size={22} /> : <Bell size={22} />}
             </button>
             <button
+              onClick={() => setGalleryOpen(true)}
+              title="关键帧抓拍"
+              className="relative p-2 rounded-full transition-colors active:scale-90 hover:bg-surface-container"
+            >
+              <Camera size={22} />
+              {snapshots.length > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {snapshots.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setDriverModalOpen(true)}
+              title="车主管理"
+              className="p-2 rounded-full transition-colors active:scale-90 hover:bg-surface-container"
+            >
+              <IdCard size={22} />
+            </button>
+            <button
+              onClick={() => setChatOpen(true)}
+              title="AI 驾驶助手"
+              className="p-2 rounded-full transition-colors active:scale-90 hover:bg-surface-container"
+            >
+              <Bot size={22} />
+            </button>
+            <button
               onClick={() => setHistoryOpen(true)}
               title="行程历史"
               className="p-2 rounded-full transition-colors active:scale-90 hover:bg-surface-container"
             >
               <HistoryIcon size={22} />
+            </button>
+            <button
+              onClick={() => setView('dashboard')}
+              title="数据看板"
+              className="p-2 rounded-full transition-colors active:scale-90 hover:bg-surface-container"
+            >
+              <BarChart3 size={22} />
+            </button>
+            <button
+              onClick={() => setView('modeldata')}
+              title="模型与数据"
+              className="p-2 rounded-full transition-colors active:scale-90 hover:bg-surface-container"
+            >
+              <Database size={22} />
             </button>
             <button
               onClick={() => setSettingsOpen((o) => !o)}
@@ -589,9 +774,16 @@ export default function App() {
             >
               <SettingsIcon size={22} />
             </button>
-            <button className="p-2 hover:bg-surface-container rounded-full transition-colors active:scale-90">
-              <UserCircle size={22} />
-            </button>
+            <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-outline-variant/50">
+              {user && <span className="text-sm font-medium text-slate-600 max-w-[80px] truncate">{user}</span>}
+              <button
+                onClick={() => { localStorage.removeItem('dms_user'); setUser(null); setView('landing'); }}
+                title="退出登录"
+                className="p-2 rounded-full transition-colors active:scale-90 hover:bg-surface-container text-slate-500"
+              >
+                <LogOut size={20} />
+              </button>
+            </div>
 
             {settingsOpen && (
               <>
@@ -624,9 +816,10 @@ export default function App() {
         <div className="flex-1 flex overflow-hidden">
           <main className="flex-1 p-margin overflow-y-auto bg-surface-container-low">
             <div className="flex gap-gutter h-full">
+              <InfoSidebar drivingSeconds={drivingSeconds} activeBehaviors={activeBehaviors} />
               <div className="flex-1 flex flex-col gap-gutter h-full min-w-0">
                 <div className="card flex-1 flex flex-col overflow-hidden relative group">
-                  <div className="w-full flex-1 bg-surface-container-high relative flex items-center justify-center min-h-0">
+                  <div className="w-full flex-1 bg-gradient-to-br from-slate-100 via-surface-container to-blue-50/40 relative flex items-center justify-center min-h-0">
                     <AnimatePresence mode="wait">
                       {!selectedVideoUrl && !isCameraActive ? (
                         <motion.div
@@ -643,7 +836,7 @@ export default function App() {
                           <p className="font-medium text-slate-500 max-w-sm">上传视频或打开本地相机后，系统会调用后端算法返回真实检测数据。</p>
                         </motion.div>
                       ) : (
-                        <motion.div key="player" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-slate-950">
+                        <motion.div ref={playerRef} key="player" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-slate-950">
                           <video
                             ref={videoRef}
                             src={selectedVideoUrl ?? undefined}
@@ -684,9 +877,29 @@ export default function App() {
                               {isAnalyzing && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
                               {isCameraActive ? 'LIVE' : isAnalyzing ? 'VIDEO LIVE' : 'VIDEO'}
                             </span>
-                            <span className="px-3 py-1 bg-black/60 backdrop-blur-sm text-white text-xs font-bold rounded max-w-[420px] truncate">
+                            <span className="px-3 py-1 bg-black/60 backdrop-blur-sm text-white text-xs font-bold rounded max-w-[300px] truncate">
                               {videoLabel}
                             </span>
+                            {latestResult?.driver && (latestResult.driver.status === 'known' || latestResult.driver.status === 'unknown') && (
+                              <span className={`px-3 py-1 backdrop-blur-sm text-xs font-bold rounded flex items-center gap-1.5 ${latestResult.driver.status === 'known' ? 'bg-emerald-500/85 text-white' : 'bg-amber-500/85 text-white'}`}>
+                                <IdCard size={13} />
+                                {latestResult.driver.status === 'known' ? `车主 ${latestResult.driver.name}` : '未登记驾驶员'}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => captureSnapshot('手动抓拍', 'none', videoRef.current?.currentTime ?? 0)}
+                              title="抓拍当前帧 (C)"
+                              className="px-2 py-1 bg-black/60 backdrop-blur-sm text-white rounded hover:bg-black/80 active:scale-90 transition"
+                            >
+                              <Camera size={16} />
+                            </button>
+                            <button
+                              onClick={toggleFullscreen}
+                              title="全屏 (F)"
+                              className="px-2 py-1 bg-black/60 backdrop-blur-sm text-white rounded hover:bg-black/80 active:scale-90 transition"
+                            >
+                              <Maximize2 size={16} />
+                            </button>
                           </div>
                         </motion.div>
                       )}
@@ -734,6 +947,7 @@ export default function App() {
                 currentTime={videoTime}
                 seekable={Boolean(selectedVideoUrl) && !isCameraActive}
                 onSeek={handleSeek}
+                scoreHistory={scoreHistory}
               />
             </div>
           </main>
@@ -742,6 +956,9 @@ export default function App() {
         <UploadModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onConfirm={handleFileConfirm} />
         <Toasts toasts={toasts} />
         <HistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} backendUrl={BACKEND_URL} />
+        <SnapshotGallery open={galleryOpen} onClose={() => setGalleryOpen(false)} snapshots={snapshots} onClear={() => setSnapshots([])} />
+        <AiChatModal open={chatOpen} onClose={() => setChatOpen(false)} backendUrl={BACKEND_URL} context={chatContext} />
+        <DriverModal open={driverModalOpen} onClose={() => setDriverModalOpen(false)} backendUrl={BACKEND_URL} />
       </div>
     </div>
   );

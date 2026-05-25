@@ -67,11 +67,13 @@ class BehaviorRuntime:
         try:
             from behavior_detector import BehaviorDetector
 
+            params = self._load_detector_params()
             self.detector = BehaviorDetector(
                 unified_weights=str(behavior_dir / "models" / "unified.pt"),
                 base_weights=str(self.settings.repo_root / "yolov8n.pt"),
                 device="cpu",
                 imgsz=640,
+                **params,
             )
         except Exception as exc:
             self.load_error = str(exc)
@@ -83,6 +85,47 @@ class BehaviorRuntime:
             except ValueError:
                 pass
         return self.detector
+
+    _PARAM_KEYS = ("conf", "smoking_conf", "phone_use_conf", "drink_eat_conf")
+    _PARAM_DEFAULTS = {"conf": 0.35, "smoking_conf": 0.55, "phone_use_conf": 0.45, "drink_eat_conf": 0.55}
+
+    def _params_path(self) -> Path:
+        return self.settings.runtime_dir / "detector_params.json"
+
+    def _load_detector_params(self) -> dict[str, float]:
+        import json
+        path = self._params_path()
+        if path.exists():
+            try:
+                data = json.loads(path.read_text())
+                return {k: float(data[k]) for k in self._PARAM_KEYS if k in data}
+            except Exception:
+                return {}
+        return {}
+
+    def get_params(self) -> dict[str, float]:
+        if self.detector is not None:
+            return {k: float(getattr(self.detector, k)) for k in self._PARAM_KEYS}
+        merged = dict(self._PARAM_DEFAULTS)
+        merged.update(self._load_detector_params())
+        return merged
+
+    def set_params(self, params: dict[str, Any]) -> dict[str, float]:
+        import json
+        clean = {k: max(0.0, min(1.0, float(params[k]))) for k in self._PARAM_KEYS if k in params}
+        stored = self._load_detector_params()
+        stored.update(clean)
+        self._params_path().write_text(json.dumps(stored))
+        if self.detector is not None:  # 热生效
+            for k, v in clean.items():
+                setattr(self.detector, k, v)
+        return self.get_params()
+
+    def reload(self) -> None:
+        """丢弃已加载的检测器，下次推理时重新加载(用于训练完成后热部署新模型)。"""
+        self.detector = None
+        self.load_error = None
+        self.last_mode = "not_loaded"
 
     def analyze(self, frame: np.ndarray, frame_id: int, timestamp: float) -> dict[str, Any]:
         detector = self._load_detector()
@@ -343,7 +386,7 @@ class FatigueRuntime:
         """从特征窗口 + EAR 历史导出可观测信号：PERCLOS、头部姿态、视线区域。"""
         latest = window[-1]
         ear, _mar, yaw, pitch, roll = (float(latest[i]) for i in range(5))
-        valid = [e for e in self.ear_history if e > 0]  # 0 表示无脸，剔除
+        valid = [e for e in (getattr(self, "ear_history", None) or []) if e > 0]  # 0 表示无脸，剔除
         perclos = sum(1 for e in valid if e < self.EYE_CLOSED_EAR) / len(valid) if valid else 0.0
         return {
             "perclos": round(perclos, 4),
@@ -524,6 +567,10 @@ class AnalysisService:
         self.last_llm_at = time.time()
         self.last_llm_text = "等待足够的真实检测数据生成大模型分析。"
         self.llm_inflight = False
+        from .driver_id import DriverIdentifier
+        self.driver = DriverIdentifier(settings.runtime_dir / "drivers")
+        self._driver_cache: dict[str, Any] = {"name": None, "status": "no_model"}
+        self._driver_at = 0.0
 
     def capabilities(self) -> dict[str, Any]:
         return {
@@ -552,11 +599,22 @@ class AnalysisService:
             elapsed_ms=(time.time() - started) * 1000,
         )
 
+        # 当前帧检测(每类已去重，仅一框)用于画 bbox；滚动历史用于侧栏列表
+        result["frame_detections"] = result["detections"]
         for detection in result["detections"]:
             self.recent_detections.append(detection)
         result["detections"] = list(self.recent_detections)[-12:]
 
         now = time.time()
+        # 车主识别：~1.5 秒识别一次并缓存，避免每帧开销与身份抖动
+        if now - self._driver_at > 1.5:
+            self._driver_at = now
+            try:
+                self._driver_cache = self.driver.identify(frame)
+            except Exception as exc:
+                self._driver_cache = {"name": None, "status": "error", "error": str(exc)}
+        result["driver"] = self._driver_cache
+
         if include_llm or now - self.last_llm_at > 20:
             self._refresh_llm_async(
                 {

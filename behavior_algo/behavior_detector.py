@@ -222,8 +222,9 @@ class BehaviorDetector:
         temporal_window: int = 5,
         verify_phone: bool = True,
         phone_verify_conf: float = 0.15,
-        smoking_conf: float = 0.40,
+        smoking_conf: float = 0.55,
         phone_use_conf: float = 0.45,
+        drink_eat_conf: float = 0.55,
     ):
         self.device = device
         self.conf = conf
@@ -233,6 +234,8 @@ class BehaviorDetector:
         # phone_use 接受阈值：COCO 仍用低 phone_verify_conf 推理(保证 person 灵敏)，
         # 但只有手机置信度 >= phone_use_conf 才上报，抑制误报。
         self.phone_use_conf = phone_use_conf
+        # drinking/eating 同属"手到嘴边"动作，易把举手机/打电话误判，单独抬高阈值
+        self.drink_eat_conf = drink_eat_conf
         self.iou = iou
         self.imgsz = imgsz
         self.low_light_enhance = low_light_enhance
@@ -260,9 +263,9 @@ class BehaviorDetector:
                 print(f"[Init] 加载手机确认模型(COCO): {base_weights}")
                 self.phone_verify = YOLO(str(bpath))
 
-        # activate=2：行为出现 2 帧即确认上报(更及时，误报由置信度阈值兜底)；
-        # deactivate=2：消失约 2 帧即清除告警(bbox 不长时间滞留)。
-        self.smoother = TemporalSmoother(window=temporal_window, activate=2, deactivate=2)
+        # activate=1：检出即上报(零确认延迟，更跟手，误报由置信度阈值兜底)；
+        # window=4/deactivate=2：消失约 2 帧即清除，兼顾不滞留。
+        self.smoother = TemporalSmoother(window=4, activate=1, deactivate=2)
 
         # 双手离盘状态机：默认在盘(安全)。检出离盘需连续 N 帧才告警(防抖)。
         self.hands_off_streak_min = 2
@@ -416,9 +419,15 @@ class BehaviorDetector:
                 name = (self.class_names.get(cls_id) or "").lower()
                 if not name:
                     continue
-                # 按类分级阈值：smoking 放宽到 smoking_conf，其余类用 self.conf
+                # 按类分级阈值：smoking 用 smoking_conf；drinking/eating 用更高的
+                # drink_eat_conf(抑制举手机/打电话被误判成喝水/进食)；其余类用 self.conf。
                 # (phone_use 不在此判定，统一改由 COCO 实体手机检测驱动)
-                min_conf = self.smoking_conf if name == "smoking" else self.conf
+                if name == "smoking":
+                    min_conf = self.smoking_conf
+                elif name in ("drinking", "eating"):
+                    min_conf = self.drink_eat_conf
+                else:
+                    min_conf = self.conf
                 if cf < min_conf:
                     continue
                 xyxy = box.xyxy[0].cpu().numpy().tolist()
