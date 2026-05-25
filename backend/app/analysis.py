@@ -215,6 +215,17 @@ class FatigueRuntime:
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         self._load_feature_extractor()
         self._load_predictor()
+        self._apply_settings_thresholds()
+
+    def _apply_settings_thresholds(self) -> None:
+        env_thresholds = {
+            "yawn": getattr(self.settings, "fatigue_yawn_threshold", None),
+            "look_away": getattr(self.settings, "fatigue_look_away_threshold", None),
+            "fatigue": getattr(self.settings, "fatigue_fatigue_threshold", None),
+        }
+        for key, value in env_thresholds.items():
+            if value is not None:
+                self.thresholds[key] = float(value)
 
     @property
     def load_error(self) -> str | None:
@@ -479,8 +490,12 @@ class FatigueRuntime:
     def _merge_observable_scores(self, result: dict[str, Any], window: np.ndarray) -> dict[str, Any]:
         observed_yawn, observed_look, observed_fatigue = self._heuristic_scores(window)
         indicators = dict(result.get("indicators") or {})
-        yawn_score = max(float(indicators.get("yawn_score", 0.0)), observed_yawn)
-        look_score = max(float(indicators.get("look_away_score", 0.0)), observed_look)
+        model_yawn = float(indicators.get("yawn_score", 0.0))
+        # Yawning is an instantaneous mouth-state signal. Let the latest frame clear
+        # stale sequence/model output as soon as the mouth closes.
+        yawn_score = max(model_yawn, observed_yawn) if observed_yawn >= self.thresholds["yawn"] else observed_yawn
+        model_look = float(indicators.get("look_away_score", 0.0))
+        look_score = max(model_look, observed_look) if observed_look >= self.thresholds["look_away"] else observed_look
         fatigue_score = max(float(indicators.get("fatigue_score", 0.0)), observed_fatigue)
         summary = self._public_result(yawn_score, look_score, fatigue_score)
         merged = dict(result)
@@ -550,10 +565,12 @@ class FatigueRuntime:
             + 0.15 * float(np.percentile(nod_score, 90))
             + 0.10 * float(np.percentile(drowsy_signal, 90))
         )
+        latest_yawn_score = float(yawn_signal[-1].clip(0.0, 1.0))
+        latest_look_score = float(look_signal[-1].clip(0.0, 1.0))
 
         return (
-            float(np.max(yawn_signal).clip(0.0, 1.0)),
-            float(np.max(look_signal).clip(0.0, 1.0)),
+            latest_yawn_score,
+            latest_look_score,
             float(np.clip(fatigue_signal, 0.0, 1.0)),
         )
 

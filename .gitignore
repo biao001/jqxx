@@ -20,7 +20,6 @@ behavior_algo/outputs/
 
 # Local DMS backend runtime and secrets
 backend/runtime/
-backend/.env
 
 # Python 虚拟环境
 .venv/
