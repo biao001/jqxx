@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any, Callable
+from urllib.error import URLError
 from urllib.request import Request, urlopen as default_urlopen
 
 
@@ -11,7 +12,18 @@ class LlmSettings:
     base_url: str
     api_key: str
     model: str
-    timeout_seconds: int = 20
+    timeout_seconds: int = 60
+
+
+def _is_timeout_error(exc: BaseException) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    if isinstance(exc, URLError):
+        reason = exc.reason
+        if isinstance(reason, BaseException):
+            return _is_timeout_error(reason)
+        return "timed out" in str(reason).lower()
+    return "timed out" in str(exc).lower()
 
 
 def _fallback(summary: dict[str, Any], reason: str) -> str:
@@ -75,8 +87,19 @@ def _post_chat(
         },
         method="POST",
     )
-    with urlopen(request, timeout=settings.timeout_seconds) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    for attempt in range(2):
+        try:
+            with urlopen(request, timeout=settings.timeout_seconds) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            break
+        except Exception as exc:
+            if _is_timeout_error(exc) and attempt == 0:
+                continue
+            if _is_timeout_error(exc):
+                raise TimeoutError(
+                    f"大模型响应超时（超过 {settings.timeout_seconds} 秒），请稍后重试或调高 LLM_TIMEOUT_SECONDS"
+                ) from exc
+            raise
     return str(data["choices"][0]["message"]["content"]).strip()
 
 

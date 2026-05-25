@@ -51,7 +51,7 @@ def get_settings() -> Settings:
             base_url=os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"),
             api_key=os.getenv("SILICONFLOW_API_KEY", ""),
             model=os.getenv("SILICONFLOW_MODEL", "Qwen/Qwen3-8B"),
-            timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "20")),
+            timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
         ),
         frame_stride=max(1, int(os.getenv("DMS_FRAME_STRIDE", "10"))),
         max_video_frames=max(1, int(os.getenv("DMS_MAX_VIDEO_FRAMES", "240"))),
