@@ -167,10 +167,11 @@ class TemporalSmoother:
         stable = []
         for b, h in self.history.items():
             on = sum(h)
-            if not self.active.get(b, False) and on >= self.activate:
+            misses = len(h) - on
+            if b in seen and not self.active.get(b, False) and on >= self.activate:
                 self.active[b] = True
                 self.start_ts[b] = timestamp
-            elif self.active.get(b, False) and (self.window - on) >= self.deactivate:
+            elif self.active.get(b, False) and misses >= self.deactivate:
                 self.active[b] = False
             if self.active.get(b, False):
                 stable.append(b)

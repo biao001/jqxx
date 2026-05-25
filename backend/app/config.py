@@ -29,6 +29,9 @@ class Settings:
     llm: LlmSettings
     frame_stride: int = 10
     max_video_frames: int = 240
+    fatigue_yawn_threshold: float = 0.55
+    fatigue_look_away_threshold: float = 0.55
+    fatigue_fatigue_threshold: float = 0.60
 
 
 def get_settings() -> Settings:
@@ -52,4 +55,7 @@ def get_settings() -> Settings:
         ),
         frame_stride=max(1, int(os.getenv("DMS_FRAME_STRIDE", "10"))),
         max_video_frames=max(1, int(os.getenv("DMS_MAX_VIDEO_FRAMES", "240"))),
+        fatigue_yawn_threshold=float(os.getenv("DMS_FATIGUE_YAWN_THRESHOLD", "0.55")),
+        fatigue_look_away_threshold=float(os.getenv("DMS_FATIGUE_LOOK_AWAY_THRESHOLD", "0.55")),
+        fatigue_fatigue_threshold=float(os.getenv("DMS_FATIGUE_FATIGUE_THRESHOLD", "0.60")),
     )

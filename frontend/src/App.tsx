@@ -20,6 +20,7 @@ import StatsDashboard from './components/StatsDashboard';
 import ModelDataPage from './components/ModelDataPage';
 import { useDriverAlerts } from './lib/useDriverAlerts';
 import { AnalysisResult, BehaviorSummary, Detection, DrivingStats, FatigueSummary, Severity } from './types';
+import { activeBehaviorsFromCurrentFrame, driverStatusFromCurrentFrame } from './statusSelectors';
 
 const SEV_RANK: Record<Severity, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
@@ -608,17 +609,7 @@ export default function App() {
 
   // 由当前帧检测推导驾驶员状态指示灯(正常/告警)
   const driverStatus = useMemo<DriverStatus | null>(() => {
-    if (!latestResult) return null;
-    const types = (latestResult.detections || []).map((d) => d.type);
-    const has = (kw: string) => types.some((t) => t.includes(kw));
-    return {
-      present: !has('无人'),
-      seatbelt: !has('未系'),
-      hands: !has('离开方向盘') && !has('离盘'),
-      gaze: !has('视线'),
-      noPhone: !has('手机') && !has('电话'),
-      noSmoke: !has('吸烟'),
-    };
+    return driverStatusFromCurrentFrame(latestResult);
   }, [latestResult]);
 
   const sevHex = (sev?: string): string =>
@@ -626,10 +617,7 @@ export default function App() {
 
   // 左侧信息栏：当前帧的行为(用于交规提醒) + 行驶计时
   const activeBehaviors = useMemo(() => {
-    const types = (latestResult?.frame_detections ?? []).map((d) => d.type);
-    const fat = latestResult?.current_fatigue;
-    if (fat && fat.risk_level !== 'low' && fat.label) types.push(fat.label);
-    return types;
+    return activeBehaviorsFromCurrentFrame(latestResult);
   }, [latestResult]);
 
   useEffect(() => {
