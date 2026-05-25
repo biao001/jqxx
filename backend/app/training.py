@@ -19,22 +19,27 @@ class TrainingManager:
         self.proc: subprocess.Popen | None = None
         self.started_at = 0.0
         self.total_epochs = 0
-        self.deployed = True  # 是否已对完成的训练做过热部署
+        self.out_model = "unified.pt"   # 本次训练产出的权重文件名
+        self.project = ""               # 本次训练的项目名(展示用)
         self._lock = Lock()
 
     def running(self) -> bool:
         return self.proc is not None and self.proc.poll() is None
 
-    def start(self, cfg: dict[str, Any], data_yaml: Path) -> None:
+    def start(self, cfg: dict[str, Any], data_yaml: Path, out_model: str = "unified.pt", project: str = "") -> None:
         with self._lock:
             if self.running():
                 raise RuntimeError("已有训练正在进行")
             if not data_yaml.exists():
                 raise RuntimeError("数据集不存在，请先构建/上传")
+            self.out_model = out_model
+            self.project = project
+            # 每个项目用独立 run 目录，避免进度互相覆盖
+            self.run_name = f"ui_{project}" if project else "ui_train"
             models = self.behavior_dir / "models"
-            cur = models / "unified.pt"
-            if cur.exists():
-                shutil.copy(cur, models / "unified.prev.backup.pt")  # 训练前备份
+            cur = models / out_model
+            if cur.exists():  # 训练前备份同名旧权重
+                shutil.copy(cur, models / f"{Path(out_model).stem}.prev.backup.pt")
             self.total_epochs = int(cfg.get("epochs", 50) or 50)
             cmd = [
                 sys.executable, "scripts/train_unified.py",
@@ -44,6 +49,7 @@ class TrainingManager:
                 "--imgsz", str(int(cfg.get("imgsz", 768) or 768)),
                 "--batch", str(int(cfg.get("batch", 12) or 12)),
                 "--patience", str(int(cfg.get("patience", 30) or 30)),
+                "--out", out_model,
                 "--device", "0", "--name", self.run_name,
             ]
             # 清理上轮 run 以便进度从零统计
@@ -54,7 +60,6 @@ class TrainingManager:
             logf = open(self.log_path, "w")
             self.proc = subprocess.Popen(cmd, cwd=str(self.behavior_dir), stdout=logf, stderr=subprocess.STDOUT)
             self.started_at = time.time()
-            self.deployed = False
 
     def status(self) -> dict[str, Any]:
         running = self.running()
@@ -78,6 +83,8 @@ class TrainingManager:
             "running": running,
             "started": self.started_at > 0,
             "started_at": self.started_at,
+            "project": self.project,
+            "out_model": self.out_model,
             "epoch": epoch,
             "total_epochs": self.total_epochs,
             "best_map": round(best_map, 3),

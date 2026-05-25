@@ -1,7 +1,7 @@
 """
-train_unified.py — 一键训练 8 类 DMS 危险行为检测器
+train_unified.py — 一键训练 7 类 DMS 危险行为检测器
 
-前置: 运行过 scripts/merge_datasets.py 生成 data/dms_unified/
+数据集: datasets/reckless_mapped/(由 scripts/build_reckless_mapped.py 生成)
 
 用法:
   # GPU (推荐)
@@ -26,7 +26,7 @@ from ultralytics import YOLO
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data" / "dms_unified" / "data.yaml"
+DATA = ROOT.parent / "datasets" / "reckless_mapped" / "data.yaml"
 MODELS = ROOT / "models"
 RUNS = ROOT / "runs" / "unified"
 
@@ -34,7 +34,7 @@ RUNS = ROOT / "runs" / "unified"
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=str(DATA),
-                    help="数据集 data.yaml 路径(默认 dms_unified；重训用 data/reckless_mapped/data.yaml)")
+                    help="数据集 data.yaml 路径(默认 datasets/reckless_mapped)")
     ap.add_argument("--base", default="yolov8n.pt",
                     help="基础权重 (yolov8n/s/m.pt)")
     ap.add_argument("--epochs", type=int, default=40)
@@ -43,6 +43,8 @@ def main():
     ap.add_argument("--device", default="0",
                     help="GPU id 如 0 / 0,1 / cpu")
     ap.add_argument("--name", default="exp")
+    ap.add_argument("--out", default="unified.pt",
+                    help="训练完成后 best.pt 拷贝到 models/<out>(多模型项目用)")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--patience", type=int, default=15)
     ap.add_argument("--workers", type=int, default=2,
@@ -86,7 +88,7 @@ def main():
     best = RUNS / args.name / "weights" / "best.pt"
     if not best.exists():
         raise FileNotFoundError(f"找不到 best.pt: {best}")
-    target = MODELS / "unified.pt"
+    target = MODELS / Path(args.out).name
     shutil.copy(best, target)
     print(f"\n[ok] best.pt → {target}")
     print(f"[use] python live_client.py --unified {target} --style monitor")

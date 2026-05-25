@@ -17,6 +17,7 @@ import numpy as np
 
 from .config import Settings
 from .llm import generate_llm_analysis
+from .registry import ProjectRegistry
 from .reports import write_markdown_report
 from .schemas import BEHAVIOR_LABELS, FATIGUE_LABELS, RISK_TO_SEVERITY
 from .scoring import compute_driving_stats, normalize_detection, risk_level_to_score
@@ -44,6 +45,7 @@ class BehaviorRuntime:
         self.detector: Any | None = None
         self.load_error: str | None = None
         self.last_mode = "not_loaded"
+        self.registry = ProjectRegistry(settings.repo_root, settings.runtime_dir)
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
     def capability(self) -> dict[str, Any]:
@@ -68,8 +70,14 @@ class BehaviorRuntime:
             from behavior_detector import BehaviorDetector
 
             params = self._load_detector_params()
+            # 当前生效模型(可在"模型与数据"页切换)；缺失则回退 unified.pt
+            active = self.registry.active_model()
+            weights = behavior_dir / "models" / active
+            if not weights.exists():
+                weights = behavior_dir / "models" / "unified.pt"
+            self.active_model_file = weights.name
             self.detector = BehaviorDetector(
-                unified_weights=str(behavior_dir / "models" / "unified.pt"),
+                unified_weights=str(weights),
                 base_weights=str(self.settings.repo_root / "yolov8n.pt"),
                 device="cpu",
                 imgsz=640,
@@ -122,10 +130,43 @@ class BehaviorRuntime:
         return self.get_params()
 
     def reload(self) -> None:
-        """丢弃已加载的检测器，下次推理时重新加载(用于训练完成后热部署新模型)。"""
+        """丢弃已加载的检测器，下次推理时重新加载(用于训练完成后热部署/切换模型)。"""
         self.detector = None
         self.load_error = None
         self.last_mode = "not_loaded"
+
+    def active_model(self) -> str:
+        return self.registry.active_model()
+
+    def set_active_model(self, model: str) -> str:
+        """切换实时检测生效的模型并热重载。"""
+        name = self.registry.set_active_model(model)
+        self.reload()
+        return name
+
+    def autolabel(self, frame: np.ndarray, conf: float = 0.25) -> dict[str, Any]:
+        """用当前生效模型对图片做预标注，返回 YOLO 归一化框(cx,cy,w,h)+类别索引。
+
+        仅在加载的是自训 7 类模型(mode=unified)时有效;回退到 COCO 时类别不对应，返回空。
+        """
+        det = self._load_detector()
+        if det is None or getattr(det, "model", None) is None:
+            return {"boxes": [], "model": self.active_model(), "note": "检测器未就绪"}
+        if getattr(det, "mode", "") != "unified":
+            return {"boxes": [], "model": self.active_model(), "note": "当前为通用回退模型，无法按 7 类预标注"}
+        try:
+            res = det.model.predict(frame, conf=conf, imgsz=640, verbose=False)
+        except Exception as exc:
+            return {"boxes": [], "model": self.active_model(), "note": f"预测失败: {exc}"}
+        boxes: list[dict[str, Any]] = []
+        if res:
+            b = res[0].boxes
+            if b is not None and len(b):
+                xywhn = b.xywhn.cpu().numpy()
+                clss = b.cls.cpu().numpy().astype(int)
+                for (cx, cy, w, h), c in zip(xywhn, clss):
+                    boxes.append({"cls": int(c), "cx": float(cx), "cy": float(cy), "w": float(w), "h": float(h)})
+        return {"boxes": boxes, "model": self.active_model(), "note": ""}
 
     def analyze(self, frame: np.ndarray, frame_id: int, timestamp: float) -> dict[str, Any]:
         detector = self._load_detector()

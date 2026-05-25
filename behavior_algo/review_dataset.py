@@ -1,7 +1,7 @@
 """
 review_dataset.py — Gradio 数据集筛选页
 
-对合并后的 data/dms_unified 逐张翻看（带 GT 标注框 + 类别名），
+对合并后的 datasets/dms_unified 逐张翻看（带 GT 标注框 + 类别名），
 人工剔除"污染"样本。删除 = 把 图片+标签 移到 dms_unified/_trash/，可恢复。
 筛完直接用 dms_unified 重新训练即可（无需重新 merge）。
 
@@ -21,7 +21,7 @@ import gradio as gr
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent
-DATA = ROOT / "data" / "dms_unified"
+DATA = ROOT.parent / "datasets" / "dms_unified"
 TRASH = DATA / "_trash"
 
 NAMES = ["phone_use", "smoking", "drinking", "eating", "no_seatbelt", "seatbelt"]

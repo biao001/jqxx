@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT  = ROOT / "data" / "rf_datasets"
+OUT  = ROOT.parent / "datasets" / "rf_datasets"
 
 DATASETS = [
     # (workspace, project, version, local_subdir)

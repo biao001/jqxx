@@ -13,15 +13,15 @@ reckless 9 类 → 产品 7 类(no_seatbelt 由检测器逻辑推断，不训):
   HandsNotOnWheel->hands_off_wheel  HandsOnWheel->hand_on_wheel
   Phone->phone_use  Seatbelt->seatbelt   Sleepy/microsleep->丢弃
 
-图片用符号链接，不复制。输出 data/reckless_mapped/。
+图片用符号链接，不复制。输出 datasets/reckless_mapped/。
 """
 from pathlib import Path
 from collections import Counter
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-RF = ROOT / "data" / "rf_datasets"
-DST = ROOT / "data" / "reckless_mapped"
+RF = ROOT.parent / "datasets" / "rf_datasets"
+DST = ROOT.parent / "datasets" / "reckless_mapped"
 
 NAMES = ["phone_use", "smoking", "drinking", "eating",
          "hand_on_wheel", "hands_off_wheel", "seatbelt"]
@@ -170,7 +170,7 @@ def main():
             continue
         print(f"  [{s}] " + "  ".join(
             f"{NAMES[i]}={cls_cnt[s].get(i,0)}" for i in range(len(NAMES))))
-    print("\n[next] python scripts/train_unified.py --data data/reckless_mapped/data.yaml --device 0 --epochs 50")
+    print("\n[next] python scripts/train_unified.py --data datasets/reckless_mapped/data.yaml --device 0 --epochs 50")
 
 
 if __name__ == "__main__":

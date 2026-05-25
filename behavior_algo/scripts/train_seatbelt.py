@@ -36,7 +36,7 @@ from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = ROOT / "models"
-DATA_DIR = ROOT / "data"
+DATA_DIR = ROOT.parent / "datasets"
 RUNS_DIR = ROOT / "runs" / "seatbelt"
 
 

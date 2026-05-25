@@ -1,5 +1,5 @@
 """
-balance_dataset.py — 对 data/dms_unified/train 按类下采样，缓解类别不均衡
+balance_dataset.py — 对 datasets/dms_unified/train 按类下采样，缓解类别不均衡
 
 只下采样"多数类"，且只删【纯多数类、不含任何受保护少数类】的图，
 避免误删稀缺类样本。valid 不动（保证评估稳定）。
@@ -15,8 +15,8 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TRAIN = ROOT / "data" / "dms_unified" / "train"
-TRASH = ROOT / "data" / "dms_unified" / "_balance_trash"
+TRAIN = ROOT.parent / "datasets" / "dms_unified" / "train"
+TRASH = ROOT.parent / "datasets" / "dms_unified" / "_balance_trash"
 
 NAMES = ["phone_use", "smoking", "drinking", "eating",
          "hand_on_wheel", "hands_off_wheel", "no_seatbelt", "seatbelt"]

@@ -23,11 +23,16 @@ import { AnalysisResult, BehaviorSummary, Detection, DrivingStats, FatigueSummar
 
 const SEV_RANK: Record<Severity, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+// 后端地址：默认空串(同源) —— 所有 /api、/health、/ws 请求走当前页面同源，
+// 由 dev server 反向代理到后端。这样局域网其他机器只需访问前端这一个端口(3000)，
+// 无需直连后端 8000，规避代理/防火墙导致的"后端未链接"。
+// 如需直连某个后端，可显式设置 VITE_BACKEND_URL。
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
 const CAMERA_FPS = Number(import.meta.env.VITE_CAMERA_FPS || 13); // 上限帧率；实际由后端处理速度自适应
 
 function websocketUrl(path: string) {
-  const url = new URL(BACKEND_URL);
+  const base = BACKEND_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+  const url = new URL(base);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.pathname = path;
   return url.toString();

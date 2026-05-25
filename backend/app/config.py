@@ -25,6 +25,7 @@ class Settings:
     repo_root: Path
     runtime_dir: Path
     allowed_origins: list[str]
+    allowed_origin_regex: str
     llm: LlmSettings
     frame_stride: int = 10
     max_video_frames: int = 240
@@ -35,10 +36,14 @@ def get_settings() -> Settings:
     load_dotenv_file(repo_root / "backend" / ".env")
     runtime_dir = Path(os.getenv("DMS_RUNTIME_DIR", repo_root / "backend" / "runtime"))
     origins = os.getenv("DMS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    # 默认放行任意来源的跨域请求(本地/局域网演示工具，手机扫码访问 http://<本机IP>:3000)。
+    # 部分网络的内网使用公网网段地址，故不限定私有网段;生产可用 DMS_ALLOWED_ORIGIN_REGEX 收紧。
+    origin_regex = os.getenv("DMS_ALLOWED_ORIGIN_REGEX", r"^https?://.*$")
     return Settings(
         repo_root=repo_root,
         runtime_dir=runtime_dir,
         allowed_origins=[item.strip() for item in origins.split(",") if item.strip()],
+        allowed_origin_regex=origin_regex,
         llm=LlmSettings(
             base_url=os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"),
             api_key=os.getenv("SILICONFLOW_API_KEY", ""),

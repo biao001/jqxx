@@ -4,8 +4,8 @@ merge_datasets.py — 把多个 Roboflow 数据集按"类别名"映射合并成 
 按名字而非 id 匹配，所以源数据集即使重新排列类别也不会错位。
 未在 NAME_MAPPING 中列出的类直接丢弃。
 
-源: data/rf_datasets/<subdir>/{train,valid,test}/{images,labels}
-目标: data/dms_unified/{train,valid}/{images,labels} + data.yaml
+源: datasets/rf_datasets/<subdir>/{train,valid,test}/{images,labels}
+目标: datasets/dms_unified/{train,valid}/{images,labels} + data.yaml
 
 unified 类别表 (8 类):
   0 hand_on_wheel
@@ -26,8 +26,8 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "data" / "rf_datasets"
-DST = ROOT / "data" / "dms_unified"
+SRC = ROOT.parent / "datasets" / "rf_datasets"
+DST = ROOT.parent / "datasets" / "dms_unified"
 
 
 UNIFIED_NAMES = [
