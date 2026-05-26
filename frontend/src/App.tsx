@@ -479,6 +479,10 @@ export default function App() {
       setStatusMessage('后端服务未连接，无法启动实时检测');
       return;
     }
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setStatusMessage('当前访问地址不是安全来源，浏览器禁止调用相机；请使用 https:// 地址或在本机用 localhost 访问');
+      return;
+    }
     stopFrameStream();
     sessionSourceRef.current = '本地相机实时流';
     setIsCameraActive(true);

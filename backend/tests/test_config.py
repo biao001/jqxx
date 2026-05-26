@@ -21,3 +21,21 @@ def test_get_settings_defaults_llm_timeout_to_sixty_seconds(monkeypatch):
     settings = get_settings()
 
     assert settings.llm.timeout_seconds == 60
+
+
+def test_get_settings_defaults_yolo_device_to_auto(monkeypatch):
+    monkeypatch.delenv("DMS_YOLO_DEVICE", raising=False)
+    monkeypatch.setattr(config_mod, "load_dotenv_file", lambda path: None)
+
+    settings = get_settings()
+
+    assert settings.yolo_device == "auto"
+
+
+def test_get_settings_reads_yolo_device_from_env(monkeypatch):
+    monkeypatch.setenv("DMS_YOLO_DEVICE", "cuda")
+    monkeypatch.setattr(config_mod, "load_dotenv_file", lambda path: None)
+
+    settings = get_settings()
+
+    assert settings.yolo_device == "cuda"

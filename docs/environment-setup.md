@@ -137,8 +137,10 @@ Copy-Item .env.example .env
 `frontend\.env` 默认配置：
 
 ```env
-VITE_BACKEND_URL=http://localhost:8000
+VITE_BACKEND_URL=
 VITE_CAMERA_FPS=3
+VITE_DRIVER_ALERT_DURATION_MS=700
+VITE_DRIVER_ALERT_COOLDOWN_MS=7000
 ```
 
 启动前端：
@@ -147,10 +149,22 @@ VITE_CAMERA_FPS=3
 npm run dev
 ```
 
+需要在其它设备或 IP 地址上调用摄像头时，启动 HTTPS 前端：
+
+```powershell
+npm run dev:https
+```
+
 浏览器打开：
 
 ```text
 http://localhost:3000
+```
+
+HTTPS 模式打开：
+
+```text
+https://180.85.207.200:3000
 ```
 
 如果 3000 被占用，Vite 会提示其他端口，例如 `http://localhost:3001`。
@@ -168,6 +182,12 @@ C:\Users\ASUS\.conda\envs\dms-demo\python.exe -m uvicorn backend.app.main:app --
 ```powershell
 cd frontend
 npm run dev
+```
+
+如果访问地址是 `180.85.207.200` 这类 IP，并且要调用相机，把前端命令换成：
+
+```powershell
+npm run dev:https
 ```
 
 3. 打开前端页面，上传视频或启动本地相机。
@@ -225,10 +245,15 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen
 检查 `frontend\.env`：
 
 ```env
-VITE_BACKEND_URL=http://localhost:8000
+VITE_BACKEND_URL=
 ```
 
 ### 摄像头打不开
+
+如果是通过 `http://内网IP:3000` 或 `http://公网IP:3000` 访问，浏览器会把页面判定为非安全来源，`getUserMedia` 相机权限会被拦截。相机实时检测请使用：
+
+- 本机浏览器：`http://localhost:3000`
+- 其它设备：配置 HTTPS 后用 `https://<本机IP或域名>:3000`
 
 按顺序检查：
 

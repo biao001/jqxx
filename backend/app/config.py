@@ -27,6 +27,7 @@ class Settings:
     allowed_origins: list[str]
     allowed_origin_regex: str
     llm: LlmSettings
+    yolo_device: str = "auto"
     frame_stride: int = 10
     max_video_frames: int = 240
     fatigue_yawn_threshold: float = 0.55
@@ -53,6 +54,7 @@ def get_settings() -> Settings:
             model=os.getenv("SILICONFLOW_MODEL", "Qwen/Qwen3-8B"),
             timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "60")),
         ),
+        yolo_device=os.getenv("DMS_YOLO_DEVICE", "auto").strip() or "auto",
         frame_stride=max(1, int(os.getenv("DMS_FRAME_STRIDE", "10"))),
         max_video_frames=max(1, int(os.getenv("DMS_MAX_VIDEO_FRAMES", "240"))),
         fatigue_yawn_threshold=float(os.getenv("DMS_FATIGUE_YAWN_THRESHOLD", "0.55")),

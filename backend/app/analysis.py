@@ -39,6 +39,18 @@ def encode_upload_name(filename: str | None) -> str:
     return clean or "upload.mp4"
 
 
+def resolve_yolo_device(configured: str | None) -> str:
+    device = (configured or "auto").strip().lower()
+    if device != "auto":
+        return device
+    try:
+        import torch
+
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+
 class BehaviorRuntime:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -79,7 +91,7 @@ class BehaviorRuntime:
             self.detector = BehaviorDetector(
                 unified_weights=str(weights),
                 base_weights=str(self.settings.repo_root / "yolov8n.pt"),
-                device="cpu",
+                device=resolve_yolo_device(self.settings.yolo_device),
                 imgsz=640,
                 **params,
             )

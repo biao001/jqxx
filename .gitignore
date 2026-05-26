@@ -2,9 +2,12 @@
 fatigue/data/
 *.mp4
 *.avi
-
+.vscode/
 # Claude Code 本地配置
 .claude/
+
+# 本地 HTTPS 开发证书
+.certs/
 
 # Python 缓存
 __pycache__/
