@@ -8,6 +8,8 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   // 后端地址(供 dev server 反向代理)。默认本机 8000；可用 DMS_BACKEND 覆盖。
   const backend = env.DMS_BACKEND || 'http://127.0.0.1:8000';
+  // HTTPS：mode=https 或 DMS_HTTPS=1 时启用（浏览器只在 https/localhost 下才允许摄像头）。
+  // 证书放仓库根 .certs/ 下（dms-dev.key / dms-dev.crt）。localhost 下 HTTP 也可用摄像头。
   const certDir = path.resolve(__dirname, '..', '.certs');
   const certKey = path.join(certDir, 'dms-dev.key');
   const certFile = path.join(certDir, 'dms-dev.crt');

@@ -8,26 +8,11 @@ interface Props {
   muted: boolean;
 }
 
-/** 分级告警的视觉层：critical 全屏红色边缘脉冲 + 顶部横幅；warning 顶部橙色横幅。*/
+/** 分级告警的顶部横幅(critical 红/warning 橙)。边缘呼吸光由 EdgeGlow 负责(分级升级)。*/
 export default function AlertOverlay({ level, text, muted }: Props) {
   const isCritical = level === 'critical';
   return (
     <>
-      {/* critical：边缘红色脉冲 */}
-      <AnimatePresence>
-        {isCritical && (
-          <motion.div
-            key="pulse"
-            className="absolute inset-0 pointer-events-none z-30"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0.45, 1, 0.45] }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
-            style={{ boxShadow: 'inset 0 0 0 6px rgba(239,68,68,0.95), inset 0 0 70px rgba(239,68,68,0.45)' }}
-          />
-        )}
-      </AnimatePresence>
-
       {/* 顶部告警横幅 */}
       <AnimatePresence>
         {level !== 'none' && (

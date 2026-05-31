@@ -74,15 +74,40 @@ class DriverIdentifier:
         return saved
 
     def identify(self, bgr: np.ndarray) -> dict[str, Any]:
-        if not self.available or self.recognizer is None:
-            return {"name": None, "status": "no_model"}
-        crop = self._detect_crop(bgr)
-        if crop is None:
-            return {"name": None, "status": "no_face"}
-        label, dist = self.recognizer.predict(crop)
-        if dist <= MATCH_THRESHOLD:
-            return {"name": self.labels.get(int(label)), "status": "known", "distance": round(float(dist), 1)}
-        return {"name": None, "status": "unknown", "distance": round(float(dist), 1)}
+        """检测画面中所有人脸，返回**驾驶员那张脸**的身份与位置(box=xyxy)。
+
+        - 已登记:对每张脸跑 LBPH，取匹配上注册车主且距离最小的那张 → status=known。
+        - 未匹配/未登记:取最居中的那张脸作位置兜底 → status=unknown/no_model(box 仍返回，供 ROI 定位)。
+        - 无脸:status=no_face，box=None。
+        """
+        h_img, w_img = bgr.shape[:2]
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        faces = self.cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
+        if len(faces) == 0:
+            return {"name": None, "status": "no_face", "box": None}
+
+        # 逐张脸做 LBPH，挑匹配上注册车主、距离最小的那张
+        best: tuple[float, int, tuple[int, int, int, int]] | None = None
+        if self.available and self.recognizer is not None:
+            for (x, y, w, h) in faces:
+                crop = cv2.resize(gray[y : y + h, x : x + w], FACE_SIZE)
+                label, dist = self.recognizer.predict(crop)
+                if dist <= MATCH_THRESHOLD and (best is None or dist < best[0]):
+                    best = (float(dist), int(label), (int(x), int(y), int(w), int(h)))
+
+        def xyxy(f: tuple[int, int, int, int]) -> list[int]:
+            x, y, w, h = f
+            return [x, y, x + w, y + h]
+
+        if best is not None:
+            d, label, f = best
+            return {"name": self.labels.get(label), "status": "known", "distance": round(d, 1), "box": xyxy(f)}
+
+        # 未匹配 → 最居中的脸作位置兜底
+        cx0, cy0 = w_img / 2, h_img / 2
+        fx, fy, fw, fh = min(faces, key=lambda f: ((f[0] + f[2] / 2) - cx0) ** 2 + ((f[1] + f[3] / 2) - cy0) ** 2)
+        status = "unknown" if self.recognizer is not None else "no_model"
+        return {"name": None, "status": status, "box": xyxy((int(fx), int(fy), int(fw), int(fh)))}
 
     def list_drivers(self) -> list[str]:
         return sorted(self.labels.values())

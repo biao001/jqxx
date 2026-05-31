@@ -22,6 +22,11 @@ export default function DriverModal({ open, onClose, backendUrl }: Props) {
 
   const startCam = async () => {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCamOn(false);
+        setMsg('非安全上下文(HTTP)无法用摄像头，请用 https:// 或本机 http://localhost 访问');
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 }, audio: false });
       streamRef.current = stream;
       if (videoRef.current) {

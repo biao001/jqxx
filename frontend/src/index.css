@@ -61,3 +61,10 @@
     @apply text-xs font-bold text-outline uppercase tracking-wider mb-2 block;
   }
 }
+
+/* 行程报告打印:只打印报告本身 */
+@media print {
+  body * { visibility: hidden; }
+  #trip-report, #trip-report * { visibility: visible; }
+  #trip-report { position: absolute; left: 0; top: 0; width: 100%; }
+}

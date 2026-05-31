@@ -24,9 +24,14 @@ def lan_ip() -> str:
 
 
 def main() -> None:
+    import pathlib
+
     port = sys.argv[1] if len(sys.argv) > 1 else "3000"
     ip = lan_ip()
-    url = f"http://{ip}:{port}"
+    # 前端启用了自签证书则用 https(摄像头需要安全上下文)
+    certs = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "certs"
+    scheme = "https" if (certs / "cert.pem").exists() else "http"
+    url = f"{scheme}://{ip}:{port}"
 
     print("\n  局域网访问地址(确保手机与本机在同一 WiFi/局域网):")
     print(f"  \033[1;36m{url}\033[0m\n")
@@ -41,9 +46,12 @@ def main() -> None:
     except ModuleNotFoundError:
         print("  (未安装 qrcode，无法显示二维码：pip install qrcode)")
 
-    print("\n  注意：手机浏览器调用摄像头需要 HTTPS 或 localhost；通过 http://内网IP")
-    print("  访问时摄像头/车主识别可能被浏览器拦截。仅看实时分析/看板/上传视频不受影响。")
-    print("  如需手机端摄像头，请改用 HTTPS(见 README 说明)。\n")
+    if scheme == "https":
+        print("\n  已启用 HTTPS(自签证书)：首次访问浏览器会提示\"不安全\"，点\"高级 → 继续前往\"即可，")
+        print("  之后摄像头/车主识别均可用。\n")
+    else:
+        print("\n  注意：当前是 HTTP，手机/局域网 IP 访问时摄像头被浏览器禁用。")
+        print("  生成证书启用 HTTPS 即可用摄像头(见 frontend/certs 与 vite.config)。\n")
 
 
 if __name__ == "__main__":

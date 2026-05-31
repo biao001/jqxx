@@ -91,6 +91,16 @@ class ProjectRegistry:
             raise KeyError(f"未知项目: {name}")
         return self.models_root / p["model"]
 
+    def read_model_meta(self, model: str) -> dict[str, Any] | None:
+        """读取 <model>.meta.json(训练溯源：基于哪个数据集/权重/参数训出、各类别 mAP)。"""
+        mp = self.models_root / (Path(str(model)).name + ".meta.json")
+        if mp.exists():
+            try:
+                return json.loads(mp.read_text())
+            except Exception:
+                return None
+        return None
+
     # ---- 创建空数据集 ----
     def ensure_dataset_dirs(self, name: str) -> None:
         root = self.dataset_dir(name)
@@ -198,6 +208,7 @@ class ProjectRegistry:
                 "model_size_mb": round(mp.stat().st_size / 1e6, 1) if mp.exists() else 0,
                 "model_mtime": int(mp.stat().st_mtime) if mp.exists() else 0,
                 "active": p["model"] == active,
+                "meta": self.read_model_meta(p["model"]),
             })
         return out
 
@@ -211,11 +222,36 @@ class ProjectRegistry:
         return "unified.pt"
 
     def set_active_model(self, model: str) -> str:
+        """切换实时生效模型。只要 .pt 文件存在于 models 目录即可，
+        无需在注册项目中——支持手动拷入 behavior_algo/models/ 的自训模型。"""
         model = Path(str(model)).name  # 防目录穿越
-        known = {p["model"] for p in self.load_projects()}
-        if model not in known:
-            raise ValueError("未知模型")
+        if not model.endswith(".pt"):
+            raise ValueError("模型文件名须以 .pt 结尾")
         if not (self.models_root / model).exists():
-            raise ValueError("该模型尚未训练生成(.pt 不存在)")
+            raise ValueError("该模型文件不存在(请先放入 behavior_algo/models/ 目录)")
         self._active_path.write_text(json.dumps({"model": model}, ensure_ascii=False))
         return model
+
+    def list_model_files(self) -> list[dict[str, Any]]:
+        """扫描 behavior_algo/models/ 下所有 .pt，供实时监测选用。
+
+        包含手动拷入的自训模型（无需注册项目）。注册项目关联的模型会带上中文 label。
+        """
+        active = self.active_model()
+        proj_by_model: dict[str, dict[str, Any]] = {}
+        for p in self.load_projects():
+            proj_by_model.setdefault(p["model"], p)
+        out: list[dict[str, Any]] = []
+        if self.models_root.exists():
+            for mp in sorted(self.models_root.glob("*.pt"), key=lambda x: x.name):
+                proj = proj_by_model.get(mp.name)
+                out.append({
+                    "model": mp.name,
+                    "label": proj["label"] if proj else mp.stem,
+                    "registered": proj is not None,
+                    "size_mb": round(mp.stat().st_size / 1e6, 1),
+                    "mtime": int(mp.stat().st_mtime),
+                    "active": mp.name == active,
+                    "meta": self.read_model_meta(mp.name),
+                })
+        return out

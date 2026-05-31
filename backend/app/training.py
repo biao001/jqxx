@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv as _csv
+import json as _json
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,7 @@ class TrainingManager:
         self.total_epochs = 0
         self.out_model = "unified.pt"   # 本次训练产出的权重文件名
         self.project = ""               # 本次训练的项目名(展示用)
+        self.base = "yolov8s.pt"        # 本次训练的基础权重(展示用)
         self._lock = Lock()
 
     def running(self) -> bool:
@@ -34,8 +36,10 @@ class TrainingManager:
                 raise RuntimeError("数据集不存在，请先构建/上传")
             self.out_model = out_model
             self.project = project
-            # 每个项目用独立 run 目录，避免进度互相覆盖
-            self.run_name = f"ui_{project}" if project else "ui_train"
+            self.base = str(cfg.get("base", "yolov8s.pt"))
+            # 每次训练用带时间戳的独立 run 目录：保留每一轮实验产物(csv/曲线图)供研究页回看/对比，
+            # 不再覆盖上一轮(故无需再清理旧目录)。
+            self.run_name = f"ui_{project}_{int(time.time())}" if project else f"ui_train_{int(time.time())}"
             models = self.behavior_dir / "models"
             cur = models / out_model
             if cur.exists():  # 训练前备份同名旧权重
@@ -49,13 +53,15 @@ class TrainingManager:
                 "--imgsz", str(int(cfg.get("imgsz", 768) or 768)),
                 "--batch", str(int(cfg.get("batch", 12) or 12)),
                 "--patience", str(int(cfg.get("patience", 30) or 30)),
+                "--freeze", str(int(cfg.get("freeze", 0) or 0)),
+                "--lr0", str(float(cfg.get("lr0", 0.001) or 0.001)),
                 "--out", out_model,
                 "--device", "0", "--name", self.run_name,
             ]
-            # 清理上轮 run 以便进度从零统计
-            run_dir = self.behavior_dir / "runs" / "unified" / self.run_name
-            if run_dir.exists():
-                shutil.rmtree(run_dir, ignore_errors=True)
+            if cfg.get("full_data"):
+                cmd.append("--all-splits")          # 演示：valid/test 并入训练、train 当验证(过拟合)
+            if cfg.get("include_incremental"):
+                cmd.append("--include-incremental")  # 把 unassigned 增量也纳入训练
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             logf = open(self.log_path, "w")
             self.proc = subprocess.Popen(cmd, cwd=str(self.behavior_dir), stdout=logf, stderr=subprocess.STDOUT)
@@ -75,6 +81,14 @@ class TrainingManager:
                     best_map = max(float(r[key] or 0) for r in rows)
             except Exception:
                 pass
+        # 各类别 mAP(逐 epoch 由训练回调写出) —— 让训练时能看到每个标签的精度，而非只有总 mAP50
+        per_class: dict = {}
+        pcp = self.behavior_dir / "runs" / "unified" / self.run_name / "per_class.json"
+        if pcp.exists():
+            try:
+                per_class = _json.loads(pcp.read_text())
+            except Exception:
+                pass
         log_tail = ""
         if self.log_path.exists():
             lines = [ln for ln in self.log_path.read_text(errors="ignore").splitlines() if ln.strip()]
@@ -85,6 +99,9 @@ class TrainingManager:
             "started_at": self.started_at,
             "project": self.project,
             "out_model": self.out_model,
+            "base": self.base,
+            "run": self.run_name,
+            "per_class": per_class,
             "epoch": epoch,
             "total_epochs": self.total_epochs,
             "best_map": round(best_map, 3),

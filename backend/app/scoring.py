@@ -34,6 +34,8 @@ def normalize_detection(
     normalized = {
         "id": f"{prefix}-{index}",
         "type": str(label),
+        # 英文行为代码(phone_use/drinking/smoking…)，供识别框英文标签使用；type 保留中文供列表显示
+        "code": str(event.get("type") or label),
         "timestamp": format_timestamp(timestamp_seconds),
         "confidence": confidence,
         "severity": str(event.get("severity") or event.get("risk_level") or "low"),

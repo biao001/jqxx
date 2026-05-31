@@ -42,3 +42,6 @@ behavior_algo/models/unified.trial*.pt
 /datasets/*
 !/datasets/*.md
 !/datasets/*.yaml
+
+# 本地自签 HTTPS 证书(供局域网摄像头)
+frontend/certs/

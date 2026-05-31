@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import os
 import sys
 import threading
 import time
@@ -88,10 +89,18 @@ class BehaviorRuntime:
             if not weights.exists():
                 weights = behavior_dir / "models" / "unified.pt"
             self.active_model_file = weights.name
+            device = resolve_yolo_device(self.settings.yolo_device)
+            print(f"[DMS] 行为检测推理设备: {device}")
             self.detector = BehaviorDetector(
                 unified_weights=str(weights),
-                base_weights=str(self.settings.repo_root / "yolov8n.pt"),
-                device=resolve_yolo_device(self.settings.yolo_device),
+                # COCO 通用检测器(person 判无人 + cell phone 触发/稳框)。用 yolov8s 而非 yolov8n：
+                # 实测跨域手机召回 37%→72%(近翻倍)、延迟不增，显著改善手机漏检兜底。缺失则回退 n。
+                base_weights=str(
+                    self.settings.repo_root / "yolov8s.pt"
+                    if (self.settings.repo_root / "yolov8s.pt").exists()
+                    else self.settings.repo_root / "yolov8n.pt"
+                ),
+                device=device,
                 imgsz=640,
                 **params,
             )
@@ -107,7 +116,7 @@ class BehaviorRuntime:
         return self.detector
 
     _PARAM_KEYS = ("conf", "smoking_conf", "phone_use_conf", "drink_eat_conf")
-    _PARAM_DEFAULTS = {"conf": 0.35, "smoking_conf": 0.55, "phone_use_conf": 0.45, "drink_eat_conf": 0.55}
+    _PARAM_DEFAULTS = {"conf": 0.35, "smoking_conf": 0.55, "phone_use_conf": 0.55, "drink_eat_conf": 0.55}
 
     def _params_path(self) -> Path:
         return self.settings.runtime_dir / "detector_params.json"
@@ -180,11 +189,11 @@ class BehaviorRuntime:
                     boxes.append({"cls": int(c), "cx": float(cx), "cy": float(cy), "w": float(w), "h": float(h)})
         return {"boxes": boxes, "model": self.active_model(), "note": ""}
 
-    def analyze(self, frame: np.ndarray, frame_id: int, timestamp: float) -> dict[str, Any]:
+    def analyze(self, frame: np.ndarray, frame_id: int, timestamp: float, realtime: bool = False) -> dict[str, Any]:
         detector = self._load_detector()
         if detector is not None:
             try:
-                result = detector.predict(frame, frame_id=frame_id, timestamp=timestamp)
+                result = detector.predict(frame, frame_id=frame_id, timestamp=timestamp, realtime=realtime)
                 self.last_mode = "model"
                 result["capability"] = self.capability()
                 return result
@@ -637,10 +646,73 @@ class AnalysisService:
         self.last_llm_at = time.time()
         self.last_llm_text = "等待足够的真实检测数据生成大模型分析。"
         self.llm_inflight = False
+        # 疲劳检测异步解耦：行为检测每帧同步回包，疲劳在后台线程按自身速度刷新。
+        # MediaPipe 特征提取每帧 ~40-200ms，若与 YOLO(~8ms) 串行会把实时帧率拖到 ~5fps、
+        # 导致行为框「不跟手」。这里缓存上次疲劳结果填充当前帧，后台线程更新。
+        self._last_fatigue: dict[str, Any] | None = None
+        self.fatigue_inflight = False
         from .driver_id import DriverIdentifier
         self.driver = DriverIdentifier(settings.runtime_dir / "drivers")
         self._driver_cache: dict[str, Any] = {"name": None, "status": "no_model"}
         self._driver_at = 0.0
+        # 持续重识别(不再永久锁定)：每 ~1.5s 重识别一次，换人自动切换身份。
+        self._driver_seen_at = 0.0  # 最近一次"画面有驾驶员"(检到脸或人)的时刻，用于无人判定
+        # 驾驶员 ROI 混合跟踪：识别到就锁定，短暂丢失沿用上次(TTL 内)
+        self._driver_roi: list[int] | None = None
+        self._driver_roi_at = 0.0
+
+    DRIVER_ROI_TTL = 2.0
+    DRIVER_REID_INTERVAL = 1.5   # 重识别间隔(秒)：换人会在此延迟内自动切换
+    NO_DRIVER_TTL = 2.0          # 脸+人连续丢失超过此秒数 → 判驾驶位无人(换人/侧脸短暂丢失不误报)
+
+    # ---- 驾驶员定位 / 收口 ----
+    @staticmethod
+    def _center_in(box: list[int], outer: list[int]) -> bool:
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        return outer[0] <= cx <= outer[2] and outer[1] <= cy <= outer[3]
+
+    @staticmethod
+    def _expand_face(face: list[int], shape: tuple) -> list[int]:
+        """脸框无人体框时的兜底：向下/两侧扩成躯干区(覆盖手、方向盘)。"""
+        h, w = shape[:2]
+        x1, y1, x2, y2 = face
+        fw, fh = x2 - x1, y2 - y1
+        cx = (x1 + x2) / 2
+        return [int(max(0, cx - fw * 1.1)), int(max(0, y1 - fh * 0.3)),
+                int(min(w, cx + fw * 1.1)), int(min(h, y2 + fh * 3.0))]
+
+    def _resolve_driver_roi(self, behavior: dict[str, Any], shape: tuple, now: float) -> list[int] | None:
+        """混合定位：驾驶员脸 → 含该脸的 person 框作 ROI；无人框则脸框扩展；
+        本帧无脸/无人则沿用上次 ROI(TTL 内)，超时判无驾驶员。"""
+        persons = behavior.get("persons") or []
+        face = (self._driver_cache or {}).get("box")
+        roi: list[int] | None = None
+        if face:
+            fcx, fcy = (face[0] + face[2]) / 2, (face[1] + face[3]) / 2
+            contain = [p for p in persons if p[0] <= fcx <= p[2] and p[1] <= fcy <= p[3]]
+            if contain:  # 取最贴合(面积最小)的人体框
+                roi = min(contain, key=lambda p: (p[2] - p[0]) * (p[3] - p[1]))
+            else:
+                roi = self._expand_face(face, shape)
+        if roi:
+            self._driver_roi, self._driver_roi_at = roi, now
+            return roi
+        if self._driver_roi and now - self._driver_roi_at <= self.DRIVER_ROI_TTL:
+            return self._driver_roi  # 短暂丢失，沿用上次
+        return None
+
+    def _gate_behavior_to_driver(self, behavior: dict[str, Any], roi: list[int] | None) -> None:
+        """只保留落在驾驶员 ROI 内的行为(背景人的手机/抽烟丢弃)。无 ROI 则判无驾驶员。"""
+        events = behavior.get("behaviors") or []
+        if roi is None:
+            behavior["driver_present"] = False
+            behavior["behaviors"] = [e for e in events if e.get("type") == "no_driver"]
+            return
+        behavior["driver_present"] = True
+        behavior["behaviors"] = [
+            e for e in events
+            if e.get("type") != "no_driver" and (e.get("bbox") is None or self._center_in(e["bbox"], roi))
+        ]
 
     def capabilities(self) -> dict[str, Any]:
         return {
@@ -659,8 +731,75 @@ class AnalysisService:
     def analyze_frame(self, frame: np.ndarray, frame_id: int, timestamp: float | None = None, include_llm: bool = False) -> dict[str, Any]:
         started = time.time()
         ts = timestamp if timestamp is not None else time.time()
-        behavior = self.behavior.analyze(frame, frame_id=frame_id, timestamp=ts)
-        fatigue = self.fatigue.analyze_frame(frame, frame_id=frame_id, timestamp=ts)
+
+        now = started
+        # 新相机流(frame_id=0)：重置识别状态。不再永久锁定——持续重识别以支持换人。
+        if frame_id == 0:
+            self._driver_at = 0.0
+            self._driver_cache = {"name": None, "status": "no_model"}
+            self._driver_seen_at = now  # 开流给一段宽限，避免一上来就报无人
+            self._last_fatigue = None  # 新流重置疲劳缓存，下面会同步播种一次
+        # 车主识别：每 ~1.5s 持续识别一次(不锁定)，换人会在此延迟内自动切换身份。
+        do_driver = (now - self._driver_at > self.DRIVER_REID_INTERVAL)
+        if do_driver:
+            self._driver_at = now
+
+        # 行为检测（GPU YOLO）—— 实时模式：只检危险动作，不判安全带/方向盘
+        behavior = self.behavior.analyze(frame, frame_id=frame_id, timestamp=ts, realtime=True)
+
+        now = time.time()
+        if do_driver:
+            try:
+                self._driver_cache = self.driver.identify(frame)  # 持续刷新身份+人脸框
+            except Exception as exc:
+                self._driver_cache = {"name": None, "status": "error", "error": str(exc)}
+
+        # 实时模式【不】做 ROI 门控——动作识别覆盖整个画面，避免驾驶员稍一移动/
+        # 伸手，动作框中心就超出小 ROI 被丢弃（即时响应、大范围是硬指标）。
+        roi = None
+
+        # 驾驶位无人判定：检到驾驶员脸 或 画面有人(COCO person) 都算"在座"。
+        # 任一信号出现即续期；两者连续丢失超过 NO_DRIVER_TTL 才判无人(换人/侧脸短暂丢失不误报)。
+        face_box = (self._driver_cache or {}).get("box")
+        persons = behavior.get("persons") or []
+        if face_box or persons:
+            self._driver_seen_at = now
+        no_driver = (now - self._driver_seen_at) > self.NO_DRIVER_TTL
+        if no_driver:
+            behavior["driver_present"] = False
+            self._driver_cache = {"name": None, "status": "no_face", "box": None}  # 清掉旧人脸框
+            evs = [e for e in (behavior.get("behaviors") or []) if e.get("type") == "no_driver"]
+            if not evs:  # 无人时只保留 no_driver，清掉可能的动作误报
+                evs = [{
+                    "type": "no_driver", "label_zh": BEHAVIOR_LABELS["no_driver"],
+                    "confidence": 0.9, "severity": "critical", "duration_s": 0.0,
+                    "evidence": "人脸与人体连续丢失，判定驾驶位无人",
+                }]
+            behavior["behaviors"] = evs
+        else:
+            behavior.setdefault("driver_present", True)
+
+        # 疲劳检测（CPU/MediaPipe）：有人脸时裁剪后再算
+        face = (self._driver_cache or {}).get("box")
+        fat_frame = frame
+        if face:
+            h, w = frame.shape[:2]
+            fw, fh = face[2] - face[0], face[3] - face[1]
+            cx1 = max(0, int(face[0] - fw * 0.8))
+            cy1 = max(0, int(face[1] - fh * 0.8))
+            cx2 = min(w, int(face[2] + fw * 0.8))
+            cy2 = min(h, int(face[3] + fh * 0.8))
+            crop = frame[cy1:cy2, cx1:cx2]
+            if crop.size:
+                fat_frame = crop
+        # 疲劳异步解耦：首帧/无缓存时同步算一次播种，其余帧用缓存 + 后台刷新，
+        # 让行为检测每帧都能即时回包（不被 MediaPipe 拖慢）。
+        if frame_id == 0 or self._last_fatigue is None:
+            self._last_fatigue = self.fatigue.analyze_frame(fat_frame, frame_id=frame_id, timestamp=ts)
+        else:
+            self._refresh_fatigue_async(fat_frame, frame_id, ts)
+        fatigue = self._last_fatigue
+
         result = self._combine(
             job_id=None,
             source={"kind": "camera", "name": "本地相机"},
@@ -674,16 +813,9 @@ class AnalysisService:
         for detection in result["detections"]:
             self.recent_detections.append(detection)
         result["detections"] = list(self.recent_detections)[-12:]
-
-        now = time.time()
-        # 车主识别：~1.5 秒识别一次并缓存，避免每帧开销与身份抖动
-        if now - self._driver_at > 1.5:
-            self._driver_at = now
-            try:
-                self._driver_cache = self.driver.identify(frame)
-            except Exception as exc:
-                self._driver_cache = {"name": None, "status": "error", "error": str(exc)}
         result["driver"] = self._driver_cache
+        result["driver_roi"] = roi
+        result["driver_present"] = behavior.get("driver_present", True)
 
         if include_llm or now - self.last_llm_at > 20:
             self._refresh_llm_async(
@@ -696,6 +828,30 @@ class AnalysisService:
             )
         result["llm_analysis"] = self.last_llm_text
         return result
+
+    def _refresh_fatigue_async(self, fat_frame: np.ndarray, frame_id: int, ts: float) -> None:
+        """后台线程刷新疲劳结果，不阻塞行为检测回包。
+
+        inflight 标志天然限流：MediaPipe 一次 ~40-200ms，期间到来的帧直接复用缓存，
+        疲劳按自身速度更新(~5-15fps)，而行为框仍以 YOLO 速度(~25fps)每帧刷新。
+        疲劳是慢变信号，低刷新率不影响其判定质量。
+        """
+        if self.fatigue_inflight:
+            return
+        self.fatigue_inflight = True
+        frame_copy = fat_frame.copy()  # 与主线程后续帧解耦，避免数据竞争
+
+        def worker() -> None:
+            try:
+                self._last_fatigue = self.fatigue.analyze_frame(
+                    frame_copy, frame_id=frame_id, timestamp=ts
+                )
+            except Exception:
+                pass
+            finally:
+                self.fatigue_inflight = False
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _refresh_llm_async(self, summary: dict[str, Any]) -> None:
         if self.llm_inflight:

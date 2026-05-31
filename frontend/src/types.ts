@@ -3,6 +3,7 @@ export type Severity = 'none' | 'low' | 'medium' | 'high' | 'critical';
 export interface Detection {
   id: string;
   type: string;
+  code?: string; // 英文行为代码(phone_use/drinking/smoking…)，识别框用它做英文标签
   timestamp: string;
   confidence: number;
   severity: Severity;
@@ -77,9 +78,12 @@ export interface AnalysisResult {
   frame_detections?: Detection[]; // 当前帧检测(画 bbox 用，每类仅一框)
   current_behavior?: BehaviorSummary;
   current_fatigue?: FatigueSummary;
-  driver?: { name: string | null; status: string; distance?: number };
+  driver?: { name: string | null; status: string; distance?: number; box?: number[] };
+  driver_roi?: number[] | null; // 驾驶员区域(xyxy 像素)，行为/疲劳只算此区域
+  driver_present?: boolean; // 是否检出驾驶员（实时模式恒 true）
   llm_analysis: string;
   report_url: string | null;
+  client_capture_t?: number; // 客户端送检时刻(performance.now ms)，FIFO 配对得到，用于视频↔检测同步
   capabilities: {
     behavior?: Capability;
     fatigue?: Capability;

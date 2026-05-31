@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import functools
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -24,8 +27,29 @@ storage.init_db(SESSIONS_DB)
 
 UPLOAD_DATASET_DIR = settings.repo_root / "datasets" / "uploads"
 TRAIN_CFG_PATH = settings.runtime_dir / "training_config.json"
-TRAIN_CFG_DEFAULT = {"base": "yolov8s.pt", "epochs": 150, "imgsz": 768, "batch": 12, "patience": 30}
+TRAIN_CFG_DEFAULT = {
+    "base": "yolov8s.pt", "epochs": 150, "imgsz": 768, "batch": 12, "patience": 30,
+    # 增量微调旋钮：freeze 冻结前 N 层(0=不冻)；lr0 初始学习率(从已训权重续训建议更低)。
+    "freeze": 0, "lr0": 0.001,
+    # full_data=演示模式：valid/test 也并入训练、以 train 当验证集(过拟合，指标虚高、仅现场演示用)。
+    # include_incremental=把 unassigned(增量/未并入训练)也纳入本次训练。
+    "full_data": False, "include_incremental": False,
+}
 trainer = TrainingManager(settings.repo_root, settings.runtime_dir / "train.log")
+
+# 训练实验产物目录(ultralytics 每个 run 一个子目录：results.csv + 各种曲线图 png)
+RUNS_BASE = settings.repo_root / "behavior_algo" / "runs" / "unified"
+_RUN_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")  # run/文件名白名单，防目录穿越
+
+
+def _safe_run_dir(run: str) -> Path:
+    run = (run or "").strip()
+    if not run or not _RUN_RE.match(run):
+        raise HTTPException(status_code=400, detail="run 名非法")
+    d = RUNS_BASE / run
+    if not d.is_dir():
+        raise HTTPException(status_code=404, detail="该实验 run 不存在")
+    return d
 
 # 多数据集/多模型项目注册表(共用 BehaviorRuntime 内已构造的实例)
 registry = service.behavior.registry
@@ -168,6 +192,12 @@ def rename_project(name: str, payload: dict) -> dict:
     return {"project": res["project"], "projects": registry.list_with_stats(), "active_model": registry.active_model()}
 
 
+@app.get("/api/models")
+def list_models() -> dict:
+    """列出 behavior_algo/models/ 目录下所有 .pt（含手动拷入的自训模型），供实时监测选用。"""
+    return {"models": registry.list_model_files(), "active_model": registry.active_model()}
+
+
 @app.get("/api/model/active")
 def get_active_model() -> dict:
     return {"active_model": registry.active_model()}
@@ -278,6 +308,40 @@ def dataset_move_image(payload: dict) -> dict:
     return {"moved": True, "to_split": to_split}
 
 
+@app.post("/api/dataset/promote_incremental")
+def dataset_promote_incremental(payload: dict) -> dict:
+    """把增量(unassigned)里的图片(连标注)并入 train，标记为「已并入训练」。
+
+    配合「增量微调」工作流：录制采样默认进 unassigned(增量待训)，训练验证 OK 后一键晋升并入
+    train，留下可追溯的「已训练 vs 增量」边界，避免与已训练数据混淆。
+    """
+    ds_dir = _dataset_dir(payload.get("dataset"))
+    img_dir = ds_dir / dataset_mod.UNASSIGNED / "images"
+    moved = 0
+    if img_dir.exists():
+        for p in sorted(img_dir.iterdir()):
+            if p.suffix.lower() in dataset_mod.IMG_EXT and dataset_mod.move_image(ds_dir, dataset_mod.UNASSIGNED, p.stem, "train"):
+                moved += 1
+    return {"moved": moved}
+
+
+@app.post("/api/dataset/merge_into")
+def dataset_merge_into(payload: dict) -> dict:
+    """把 src 数据集的「已标注」样本(连标注)复制并入 dst 数据集的同名 split。
+
+    用于防遗忘混合微调：把实时/演示采集并标好的数据并进现役训练集(reckless_mapped)，
+    再以 unified.pt 为 base 训练，既学新场景又保住原 7 类能力。copy 不动源、幂等可重复。
+    """
+    src = str(payload.get("src", ""))
+    dst = str(payload.get("dst", ""))
+    if not src or not dst or src == dst:
+        raise HTTPException(status_code=400, detail="src/dst 不能为空且不能相同")
+    src_dir = _dataset_dir(src)   # 校验项目存在
+    dst_dir = _dataset_dir(dst)
+    res = dataset_mod.merge_labeled(src_dir, dst_dir)
+    return {**res, "src": src, "dst": dst}
+
+
 @app.post("/api/dataset/redistribute")
 def dataset_redistribute(payload: dict) -> dict:
     """按比例把所有图片(连标注)随机重新划分 train/valid/test。"""
@@ -290,6 +354,69 @@ def dataset_redistribute(payload: dict) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return res
+
+
+def _aug_common(payload: dict) -> dict:
+    """解析增强公共入参(类别/强度等)。"""
+    classes = payload.get("classes")
+    classes = [int(c) for c in classes] if classes else None
+    tpc = payload.get("target_per_class")
+    return {
+        "ops": list(payload.get("ops", []) or []),
+        "max_deg": float(payload.get("max_deg", 15.0) or 15.0),
+        "source_split": str(payload.get("source_split", "train")),
+        "classes": classes,
+        "intensity": payload.get("intensity") or {},
+        "target_per_class": int(tpc) if tpc else None,
+    }
+
+
+@app.post("/api/dataset/augment")
+def dataset_augment(payload: dict) -> dict:
+    """离线数据增强：旋转/翻转/噪声/亮度/模糊，写入 train。
+
+    支持按类别(classes)、均衡到目标(target_per_class)、逐操作强度(intensity)。
+    """
+    common = _aug_common(payload)
+    try:
+        res = dataset_mod.augment_dataset(
+            _dataset_dir(payload.get("dataset")),
+            ops=common["ops"],
+            factor=int(payload.get("factor", 2) or 2),
+            max_deg=common["max_deg"],
+            source_split=common["source_split"],
+            classes=common["classes"],
+            target_per_class=common["target_per_class"],
+            intensity=common["intensity"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return res
+
+
+@app.post("/api/dataset/augment_preview")
+def dataset_augment_preview(payload: dict) -> dict:
+    """增强预览：返回若干带框的增强示例图(base64)，不写入数据集。"""
+    common = _aug_common(payload)
+    try:
+        res = dataset_mod.preview_augment(
+            _dataset_dir(payload.get("dataset")),
+            ops=common["ops"],
+            max_deg=common["max_deg"],
+            source_split=common["source_split"],
+            classes=common["classes"],
+            intensity=common["intensity"],
+            count=int(payload.get("count", 4) or 4),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return res
+
+
+@app.post("/api/dataset/clear_augment")
+def dataset_clear_augment(payload: dict) -> dict:
+    """清除某数据集中所有离线增强生成的样本(<dataset>_aug_*)。"""
+    return dataset_mod.clear_augmented(_dataset_dir(payload.get("dataset")))
 
 
 @app.get("/api/dataset/export")
@@ -441,6 +568,58 @@ async def dataset_video_frames(
             os.remove(tmp_path)
 
 
+@app.post("/api/dataset/capture_frames")
+def dataset_capture_frames(payload: dict) -> dict:
+    """实时录制采样：前端把一段画面的若干帧(base64)一次性传来，逐帧入库并(可选)用当前
+    模型预标注。配合实时检测「录制样本」按钮——在真实座舱采多样数据→修标→重训，根治泛化漏检。
+    payload: {dataset, split='unassigned', frames:[dataURL...], autolabel=true, conf}
+    """
+    import base64
+    import cv2
+    import numpy as np
+
+    dataset = payload.get("dataset") or DEFAULT_DATASET
+    split = str(payload.get("split", "unassigned"))
+    if split not in dataset_mod.BROWSE_SPLITS:
+        raise HTTPException(status_code=400, detail="split 非法")
+    frames = payload.get("frames") or []
+    if not isinstance(frames, list) or not frames:
+        raise HTTPException(status_code=400, detail="未收到帧")
+    frames = frames[:120]  # 上限保护(约 20s @6fps)
+    do_label = bool(payload.get("autolabel", True))
+    conf = float(payload.get("conf", 0.25) or 0.25)
+    ds_dir = _dataset_dir(dataset)
+
+    saved = labeled = total_boxes = 0
+    note = ""
+    for item in frames:
+        s = str(item)
+        if "," in s and s.startswith("data:"):
+            s = s.split(",", 1)[1]
+        try:
+            raw = base64.b64decode(s)
+        except Exception:
+            continue
+        name = dataset_mod.add_single_image(ds_dir, split, "cap.jpg", raw)
+        saved += 1
+        if do_label:
+            img = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if img is None:
+                continue
+            res = service.behavior.autolabel(img, conf=conf)
+            if res.get("note"):
+                note = res["note"]  # 模型不可用(如回退 COCO)；图已存，仍可手动标
+                continue
+            boxes = res.get("boxes", [])
+            if boxes:
+                dataset_mod.write_labels(ds_dir, split, name, boxes)
+                labeled += 1
+                total_boxes += len(boxes)
+    return {"saved": saved, "labeled": labeled, "boxes": total_boxes,
+            "split": split, "dataset": dataset, "note": note,
+            "model": service.behavior.active_model()}
+
+
 @app.get("/api/detector/params")
 def get_detector_params() -> dict:
     return service.behavior.get_params()
@@ -487,6 +666,83 @@ def training_status() -> dict:
     # 训练产出 models/<out_model>;是否切换为生效模型由用户在页面显式操作
     st["is_active"] = st.get("out_model") == registry.active_model()
     return st
+
+
+@app.get("/api/training/runs")
+def training_runs() -> dict:
+    """列出所有训练实验 run(供研究页选择/对比历史)。当前正在跑的 run 也标出。"""
+    runs = []
+    if RUNS_BASE.exists():
+        for d in RUNS_BASE.iterdir():
+            if d.is_dir():
+                runs.append({
+                    "name": d.name,
+                    "mtime": int(d.stat().st_mtime),
+                    "has_csv": (d / "results.csv").exists(),
+                })
+    runs.sort(key=lambda r: r["mtime"], reverse=True)
+    return {"runs": runs, "current": trainer.run_name if trainer.running() else None}
+
+
+@app.get("/api/training/metrics")
+def training_metrics(run: str) -> dict:
+    """解析某个 run 的 results.csv → 列名 + 逐 epoch 数值行(供曲线图/数值表)。"""
+    import csv as _csv
+    import json as _json
+    d = _safe_run_dir(run)
+    per_class: dict = {}
+    pcp = d / "per_class.json"
+    if pcp.exists():
+        try:
+            per_class = _json.loads(pcp.read_text())
+        except Exception:
+            per_class = {}
+    csvp = d / "results.csv"
+    if not csvp.exists():
+        return {"columns": [], "rows": [], "per_class": per_class}
+    rows: list[dict] = []
+    cols: list[str] = []
+    with open(csvp, newline="") as f:
+        reader = _csv.DictReader(f)
+        cols = [c.strip() for c in (reader.fieldnames or [])]
+        for raw in reader:
+            row: dict = {}
+            for k, v in raw.items():
+                if k is None:
+                    continue
+                kk = k.strip()
+                try:
+                    row[kk] = float(v)
+                except (TypeError, ValueError):
+                    row[kk] = v
+            rows.append(row)
+    return {"columns": cols, "rows": rows, "per_class": per_class}
+
+
+@app.get("/api/training/plots")
+def training_plots(run: str) -> dict:
+    """列出某 run 目录下 ultralytics 生成的图(results.png/混淆矩阵/PR 曲线/批次预览等)。"""
+    d = _safe_run_dir(run)
+    imgs = sorted(p.name for p in d.iterdir() if p.is_file() and p.suffix.lower() in (".png", ".jpg", ".jpeg"))
+    return {"plots": imgs}
+
+
+@app.get("/api/training/plot_file")
+def training_plot_file(run: str, name: str) -> FileResponse:
+    d = _safe_run_dir(run)
+    if not _RUN_RE.match(name or "") or Path(name).suffix.lower() not in (".png", ".jpg", ".jpeg"):
+        raise HTTPException(status_code=400, detail="文件名非法")
+    p = d / name
+    if p.resolve().parent != d.resolve() or not p.is_file():  # 必须是该 run 目录的直接子文件
+        raise HTTPException(status_code=404, detail="图不存在")
+    return FileResponse(p)
+
+
+@app.get("/api/training/log")
+def training_log_full() -> dict:
+    """返回当前/最近一次训练的完整 stdout 日志(train.log)。"""
+    p = settings.runtime_dir / "train.log"
+    return {"log": p.read_text(errors="ignore") if p.exists() else ""}
 
 
 @app.get("/api/sessions/{session_id}")
@@ -562,14 +818,24 @@ def driver_delete(name: str) -> dict:
 
 @app.websocket("/ws/camera")
 async def camera_stream(websocket: WebSocket) -> None:
+    """实时帧流推理端点。
+
+    推理（YOLO）是 CPU/GPU 计算密集型，必须放到线程池执行，
+    否则会阻塞 asyncio event loop，导致 WebSocket 接收/发送都被卡住。
+    """
     await websocket.accept()
     frame_id = 0
+    loop = asyncio.get_event_loop()
     try:
         while True:
             payload = await websocket.receive_bytes()
             try:
                 frame = decode_image_bytes(payload)
-                result = service.analyze_frame(frame, frame_id=frame_id)
+                # 在线程池里跑推理，event loop 可以继续收发包
+                result = await loop.run_in_executor(
+                    None,
+                    functools.partial(service.analyze_frame, frame, frame_id=frame_id),
+                )
                 await websocket.send_json(result)
                 frame_id += 1
             except Exception as exc:

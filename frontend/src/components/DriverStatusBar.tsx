@@ -44,7 +44,7 @@ export default function DriverStatusBar({ status }: Props) {
             }`}
           >
             <Icon size={14} />
-            <span className="whitespace-nowrap">{idle ? ok : good ? ok : bad}</span>
+            <span className="whitespace-nowrap">{idle ? '待检测' : good ? ok : bad}</span>
           </motion.div>
         );
       })}

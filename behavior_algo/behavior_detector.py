@@ -20,7 +20,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
 os.environ.setdefault("OPENCV_VIDEOIO_PRIORITY_MSMF", "0")
@@ -33,7 +33,18 @@ from ultralytics import YOLO
 # ---------- 常量 ----------
 
 COCO_PERSON = 0
+COCO_BOTTLE = 39
+COCO_CUP = 41
 COCO_CELL_PHONE = 67
+
+# 实时物体追踪：COCO 类 → DMS 行为类型（用追踪框稳定对应行为的显示框）。
+# 手机→phone_use；杯/瓶→drinking。smoking 无对应 COCO 类，不追踪。
+COCO_TO_BEHAVIOR = {
+    COCO_CELL_PHONE: "phone_use",
+    COCO_CUP:        "drinking",
+    COCO_BOTTLE:     "drinking",
+}
+COCO_TRACK_CLASSES = tuple(COCO_TO_BEHAVIOR.keys())
 
 
 def _center_inside(inner, outer) -> bool:
@@ -45,6 +56,22 @@ def _center_inside(inner, outer) -> bool:
     cx, cy = (ix1 + ix2) / 2, (iy1 + iy2) / 2
     pad = 0.1 * max(1.0, ox2 - ox1)  # 边缘 10% 容差，避免贴边手机被误拒
     return (ox1 - pad) <= cx <= (ox2 + pad) and (oy1 - pad) <= cy <= (oy2 + pad)
+
+
+def _phone_near_face(phone_bbox, person_bbox, upper_ratio: float = 0.55) -> bool:
+    """手机中心须落在人体上半身区域（头部/耳部/胸口高度）才判定为使用手机。
+
+    驾驶场景摄像头通常拍到头+上半身，手机放到面部/耳旁才是真正接听/刷屏；
+    放在腿上、座位旁、车门口等下半身区域不应触发 phone_use。
+    upper_ratio=0.55 表示只看人体 bbox 从顶部往下 55% 的区域。
+    """
+    if not phone_bbox or not person_bbox:
+        return False
+    px1, py1, px2, py2 = person_bbox
+    fx1, fy1, fx2, fy2 = phone_bbox
+    phone_cy = (fy1 + fy2) / 2
+    upper_bound = py1 + upper_ratio * max(1.0, py2 - py1)
+    return phone_cy <= upper_bound
 
 SEVERITY_MAP = {
     "no_driver":        "critical",
@@ -224,7 +251,7 @@ class BehaviorDetector:
         verify_phone: bool = True,
         phone_verify_conf: float = 0.15,
         smoking_conf: float = 0.55,
-        phone_use_conf: float = 0.45,
+        phone_use_conf: float = 0.55,
         drink_eat_conf: float = 0.55,
     ):
         self.device = device
@@ -265,12 +292,163 @@ class BehaviorDetector:
                 self.phone_verify = YOLO(str(bpath))
 
         # activate=1：检出即上报(零确认延迟，更跟手，误报由置信度阈值兜底)；
-        # window=4/deactivate=2：消失约 2 帧即清除，兼顾不滞留。
-        self.smoother = TemporalSmoother(window=4, activate=1, deactivate=2)
+        # window=6/deactivate=3：需连续/近 3 帧漏检才清除——放宽 gap 容忍，配合下方
+        # 「轨迹保持出框」让框在零星漏检的中间帧不消失(避免一闪一闪)。
+        self.smoother = TemporalSmoother(window=6, activate=1, deactivate=3)
+
+        # 轨迹保持：实时模式下，某行为仍被平滑器判为"活跃"但这一帧没检到框时，
+        # 沿用该类型上次的框继续输出(标 evidence=轨迹保持)，使框连续、不闪。
+        # 只在 realtime 用；新流(frame_id=0)清空。
+        self._held_box: Dict[str, Tuple[List[int], str, str, float]] = {}
 
         # 双手离盘状态机：默认在盘(安全)。检出离盘需连续 N 帧才告警(防抖)。
         self.hands_off_streak_min = 2
         self._hands_off_streak = 0
+
+        # ByteTrack 单目标追踪：实时模式用 model.track(persist=True) 给每个框稳定 ID +
+        # 卡尔曼运动平滑 + 低分检测关联，使识别框跟手、漏检几帧也不闪。
+        # 新视频流(frame_id=0)时重置轨迹，避免上次会话残留。
+        self.use_tracker = True
+        self.tracker_cfg = "bytetrack.yaml"
+
+        # 物体追踪：实时模式额外用 COCO(yolov8n) 检测手机/水杯/水瓶并做 ByteTrack 追踪，
+        # 给物体稳定 ID + 卡尔曼平滑。当 unified 判定对应行为(phone_use/drinking)时，用追踪到的、
+        # 且落在 unified 动作框内的物体框替换显示框 —— 框更紧、更跟手、帧间更稳。
+        # 触发仍由 unified 决定（场景内召回高，不改触发避免漏检），COCO 只稳框。
+        # 注：smoking 无对应 COCO 类，故不追踪香烟。
+        self.track_objects = True
+        self.obj_track_ttl = 6        # 物体框短暂丢失时沿用上次的最大帧数(桥接漏检不闪)
+        self._last_obj_box: Dict[str, Tuple[List[int], float]] = {}
+        self._last_obj_frame: Dict[str, int] = {}
+        self._obj_fresh: Dict[str, Tuple[List[int], float]] = {}  # 本帧"新鲜"检出(非TTL沿用)，供触发判定
+
+        # 背景人误识别抑制：实时同时检 COCO person，驾驶员=前景(最大)人框。
+        # 若某行为框明显落在"背景人"(较小且不在驾驶员框内)身上 → 丢弃(如背后有人拿手机)。
+        # 保守门控：只在确信是背景人时才丢，避免误删驾驶员自身动作(见 driver-no-detection 教训)。
+        self.suppress_background = True
+        self._coco_persons: List[List[int]] = []
+        self.bg_person_area_ratio = 0.6  # 面积 < 驾驶员 * 此比例 才算"背景人"(更远更小)
+
+        # COCO 手机参与"触发"：realtime.pt 的 phone_use 只用 26 个同场景框训练、易漏检；
+        # COCO yolov8n 是通用手机检测器、泛化强，故当它稳定检到手机而 unified 漏检时补触发。
+        # 防误报：置信度达标 + 连续 N 帧 + 手机不在画面最底部(排除腿上/杯架)。
+        self.phone_coco_trigger = True
+        self.phone_coco_conf = 0.25    # COCO 手机触发用的置信度门槛(高于追踪用的 0.15)
+        self.phone_streak_min = 2      # 连续检到 N 帧才触发(防单帧噪声误报)
+        self.phone_upper_ratio = 0.85  # 手机中心须在画面上方 85% 区域(排除最底部)
+        self._phone_streak = 0
+
+    def _reset_tracker(self) -> None:
+        """重置 ByteTrack 轨迹状态(新流开始时调用)，清除上次会话的旧轨迹。"""
+        self._reset_model_tracker(self.model)
+
+    @staticmethod
+    def _reset_model_tracker(model) -> None:
+        try:
+            predictor = getattr(model, "predictor", None)
+            trackers = getattr(predictor, "trackers", None) if predictor else None
+            for t in (trackers or []):
+                if hasattr(t, "reset"):
+                    t.reset()
+        except Exception:
+            pass
+
+    def _track_coco_objects(self, frame: np.ndarray, frame_id: int) -> Dict[str, Tuple[List[int], float]]:
+        """实时模式：用 COCO(yolov8n) 检测+ByteTrack 追踪手机/水杯/水瓶，返回每个行为类型
+        最高 conf 的物体框 {behavior_type: (bbox, conf)}。短暂丢失时 TTL 内沿用上次框防闪。
+
+        只追踪 COCO_TRACK_CLASSES（手机/杯/瓶），更快且不被 person 等干扰；每帧调用以保持轨迹连续。
+        """
+        if self.phone_verify is None:
+            return {}
+        if frame_id == 0:
+            self._reset_model_tracker(self.phone_verify)
+            self._last_obj_box = {}
+            self._last_obj_frame = {}
+            self._phone_streak = 0
+        try:
+            # 同时检 person(class 0)：用于区分驾驶员(前景最大人)与背景人，抑制背景误识别。
+            r = self.phone_verify.track(
+                frame, conf=self.phone_verify_conf, iou=self.iou, imgsz=self.imgsz,
+                verbose=False, device=self.device, persist=True,
+                tracker=self.tracker_cfg, classes=list(COCO_TRACK_CLASSES) + [COCO_PERSON])[0]
+        except Exception:
+            self._coco_persons = []
+            return {}
+        # 本帧每个行为类型保留最高 conf 的物体框；person 单独收集
+        seen: Dict[str, Tuple[List[int], float]] = {}
+        persons: List[List[int]] = []
+        if r.boxes is not None:
+            for b in r.boxes:
+                cid = int(b.cls.item())
+                cf = float(b.conf.item())
+                xyxy = [int(v) for v in b.xyxy[0].cpu().numpy().tolist()]
+                if cid == COCO_PERSON:
+                    if cf >= 0.35:  # person 用稍高阈值，避免杂框
+                        persons.append(xyxy)
+                    continue
+                btype = COCO_TO_BEHAVIOR.get(cid)
+                if btype is None:
+                    continue
+                if btype not in seen or cf > seen[btype][1]:
+                    seen[btype] = (xyxy, cf)
+        self._coco_persons = persons  # 供背景人抑制使用
+        self._obj_fresh = seen  # 本帧新鲜检出(供触发判定，区别于下方 TTL 沿用)
+        # 更新本帧检出的类型；未检出的类型在 TTL 内沿用上次框
+        out: Dict[str, Tuple[List[int], float]] = {}
+        for btype, box in seen.items():
+            self._last_obj_box[btype] = box
+            self._last_obj_frame[btype] = frame_id
+            out[btype] = box
+        for btype, box in self._last_obj_box.items():
+            if btype not in out and (frame_id - self._last_obj_frame.get(btype, -999)) <= self.obj_track_ttl:
+                out[btype] = box
+        return out
+
+    def _update_phone_streak(self, frame_h: int) -> None:
+        """根据本帧 COCO 手机"新鲜检出"更新连续命中计数(用于 COCO 触发兜底)。
+
+        命中条件：本帧检到手机 + 置信度≥phone_coco_conf + 中心在画面上方 phone_upper_ratio
+        区域(排除腿上/杯架的手机)。命中则 +1，否则衰减归零(连续性要求过滤单帧噪声)。
+        """
+        fresh = (self._obj_fresh or {}).get("phone_use")
+        ok = False
+        if fresh is not None:
+            (x1, y1, x2, y2), cf = fresh
+            cy = (y1 + y2) / 2.0
+            if cf >= self.phone_coco_conf and cy <= self.phone_upper_ratio * max(1, frame_h):
+                ok = True
+        self._phone_streak = self._phone_streak + 1 if ok else 0
+
+    def _suppress_background(self, events: List["BehaviorEvent"], raw: List[str]):
+        """丢弃明显属于"背景人"的行为(如背后有人拿手机)。
+
+        驾驶员=前景(面积最大)人框。某行为框中心若落在"背景人"(面积 < 驾驶员*bg_person_area_ratio)
+        内、且不在驾驶员框内 → 判为背景误识别丢弃。无人框/只有驾驶员时不处理(保守，保召回)。
+        """
+        persons = self._coco_persons or []
+        if len(persons) < 2:
+            return events, raw  # 没有第二个人，谈不上背景人误识别
+        def area(p):
+            return max(0, p[2] - p[0]) * max(0, p[3] - p[1])
+        driver = max(persons, key=area)
+        d_area = area(driver) or 1
+        bg = [p for p in persons if p is not driver and area(p) < self.bg_person_area_ratio * d_area]
+        if not bg:
+            return events, raw
+
+        def center_in(box, outer):
+            cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+            return outer[0] <= cx <= outer[2] and outer[1] <= cy <= outer[3]
+
+        kept: List[BehaviorEvent] = []
+        for e in events:
+            if e.bbox and not center_in(e.bbox, driver) and any(center_in(e.bbox, p) for p in bg):
+                continue  # 在背景人身上、且不在驾驶员框内 → 丢弃
+            kept.append(e)
+        kept_types = {e.type for e in kept}
+        raw = [t for t in raw if t in kept_types or t in ("hand_on_wheel", "seatbelt", "no_seatbelt")]
+        return kept, raw
 
     def _coco_scan(self, frame: np.ndarray) -> Dict[str, Optional[Tuple[List[int], float]]]:
         """COCO(yolov8n) 单次推理，返回最高 conf 的 person / cell phone (bbox, conf)。
@@ -280,7 +458,7 @@ class BehaviorDetector:
           - person → 真正判断驾驶位是否有人（替代"模型无输出=无人"的误判）
           - cell phone → 直接驱动 phone_use（举手机即可识别，不再只做抑制）
         """
-        out: Dict[str, Optional[Tuple[List[int], float]]] = {"person": None, "phone": None}
+        out: Dict[str, Any] = {"person": None, "phone": None, "persons": []}
         if self.phone_verify is None:
             return out
         r = self.phone_verify(frame, conf=self.phone_verify_conf, iou=self.iou,
@@ -293,8 +471,10 @@ class BehaviorDetector:
             if key is None:
                 continue
             cf = float(b.conf.item())
+            xyxy = [int(v) for v in b.xyxy[0].cpu().numpy().tolist()]
+            if key == "person":
+                out["persons"].append(xyxy)  # 收集全部人体框(用于驾驶员 ROI 收口)
             if out[key] is None or cf > out[key][1]:
-                xyxy = [int(v) for v in b.xyxy[0].cpu().numpy().tolist()]
                 out[key] = (xyxy, cf)
         return out
 
@@ -322,7 +502,9 @@ class BehaviorDetector:
     # ---------- 主推理 ----------
 
     def predict(self, frame: np.ndarray, frame_id: int = 0,
-                timestamp: Optional[float] = None) -> Dict:
+                timestamp: Optional[float] = None, realtime: bool = False) -> Dict:
+        """realtime=True 走实时监测精简逻辑（只检危险动作、即时响应）；
+        realtime=False 走上传视频完整逻辑（含无人/安全带/方向盘）。"""
         t0 = time.time()
         if timestamp is None:
             timestamp = t0
@@ -341,45 +523,92 @@ class BehaviorDetector:
                                   driver_present=False, camera_ok=False,
                                   raw=raw)
 
-        # 1. 单次 YOLO 推理
+        # 1. YOLO 推理。用较低阈值，保留 smoking 弱检测；其余类在 _from_unified 按 self.conf 过滤。
         infer_frame = frame
         if self.low_light_enhance and self._is_low_light(frame):
             infer_frame = self._enhance_low_light(frame)
-        # 用较低阈值推理，保留 smoking 的弱检测；其余类在 _from_unified 里按 self.conf 过滤
-        r = self.model(infer_frame, conf=min(self.conf, self.smoking_conf), iou=self.iou,
-                       imgsz=self.imgsz, verbose=False,
-                       device=self.device)[0]
+        infer_conf = min(self.conf, self.smoking_conf)
+        if realtime and self.use_tracker:
+            # 实时流：ByteTrack 追踪(稳定ID+卡尔曼平滑+低分关联)，框跟手、漏检不闪。
+            if frame_id == 0:
+                self._reset_tracker()  # 新流重置轨迹
+                self._held_box = {}    # 清空轨迹保持框，避免上次会话残留
+            r = self.model.track(infer_frame, conf=infer_conf, iou=self.iou,
+                                 imgsz=self.imgsz, verbose=False, device=self.device,
+                                 persist=True, tracker=self.tracker_cfg)[0]
+        else:
+            # 上传视频是跳帧采样，帧不连续，追踪无意义 → 普通检测
+            r = self.model(infer_frame, conf=infer_conf, iou=self.iou,
+                           imgsz=self.imgsz, verbose=False, device=self.device)[0]
 
+        persons: List[List[int]] = []
         if self.mode == "unified":
-            coco = self._coco_scan(infer_frame)
-            events, raw, driver_present = self._from_unified(r, events, raw, coco)
-            # phone_use 以 COCO 检测为准(彩色实时场景下 COCO 检手机最可靠)
-            events = [e for e in events if e.type != "phone_use"]
-            raw = [t for t in raw if t != "phone_use"]
-            phone, person = coco["phone"], coco["person"]
-            # 空间约束：手机中心须落在人体框内，过滤红外/背景暗区把杂物误判成手机
-            phone_ok = (
-                phone is not None
-                and phone[1] >= self.phone_use_conf
-                and person is not None
-                and _center_inside(phone[0], person[0])
-            )
-            if driver_present and phone_ok:
-                bbox, cf = phone
-                events.append(BehaviorEvent(
-                    "phone_use", LABEL_ZH["phone_use"], cf,
-                    bbox=bbox, severity=SEVERITY_MAP["phone_use"],
-                    evidence="COCO 检出 cell phone(人体范围内)"))
-                raw.append("phone_use")
-                # 手机 / 饮水 / 进食 同属"手到面部"易混动作，确认手机后抑制后两者
+            # 有效检测（已按各类阈值过滤），杂框不计入——这才是"有没有驾驶员行为"的依据
+            by_name = self._build_by_name(r)
+            # COCO 仅用于视频模式判断"驾驶位无人"：实时模式不判无人，故永不跑；
+            # 视频模式也只在 unified 无有效检测时才跑（有有效检测=有驾驶员，跳过省 ~6ms）。
+            need_coco = (not realtime) and (len(by_name) == 0)
+            coco = self._coco_scan(infer_frame) if need_coco else {"person": None, "phone": None, "persons": []}
+            persons = coco.get("persons", [])
+            # 实时：每帧追踪 COCO 物体(手机/杯/瓶，保持轨迹连续)，供下方稳定显示框
+            obj_tracks = (self._track_coco_objects(infer_frame, frame_id)
+                          if (realtime and self.track_objects) else {})
+            # 实时把 COCO person 框透出(供上层判定驾驶位无人/区分背景人)
+            if realtime and self.track_objects:
+                persons = self._coco_persons
+            # 更新手机"连续检出"计数(用本帧新鲜检出，不含 TTL 沿用)，供 COCO 触发判定
+            if realtime and self.phone_coco_trigger:
+                self._update_phone_streak(infer_frame.shape[0])
+            events, raw, driver_present = self._from_unified(by_name, events, raw, coco, realtime=realtime)
+            # phone_use：unified(realtime.pt) 专门训练了此类，直接信任其作为触发；
+            # 但显示框优先用 COCO 追踪到的手机框(更紧、更跟手、帧间更稳)。
+            phone_events = [e for e in events if e.type == "phone_use"]
+            if phone_events:
+                # 过滤：手机 bbox 中心须在其自身检出框上半区（防止低位误检）
+                # unified bbox 是行为整体框，通常已含人体上半身，保留置信度门控即可
+                events = [e for e in events if e.type != "phone_use"]
+                raw = [t for t in raw if t != "phone_use"]
+                phone_track = obj_tracks.get("phone_use")
+                for pe in phone_events:
+                    if pe.confidence >= self.phone_use_conf:
+                        # 追踪到的手机框若落在 unified 动作框内 → 用它替换显示框(焊在手机上)
+                        if phone_track is not None and pe.bbox and _center_inside(phone_track[0], pe.bbox):
+                            pe.bbox = list(phone_track[0])
+                            pe.evidence = (pe.evidence + " + COCO手机追踪框") if pe.evidence else "COCO手机追踪框"
+                        events.append(pe)
+                        raw.append("phone_use")
+            # COCO 触发兜底：unified 漏检 phone_use 时，若 COCO 稳定检到手机(连续≥N帧)，补一个。
+            # 解决 realtime.pt phone_use 训练样本少、泛化弱导致的漏检。框用 COCO 手机框。
+            if (realtime and self.phone_coco_trigger
+                    and not any(e.type == "phone_use" for e in events)
+                    and self._phone_streak >= self.phone_streak_min):
+                pbox, pconf = obj_tracks.get("phone_use") or (None, 0.0)
+                if pbox is not None:
+                    events.append(BehaviorEvent(
+                        "phone_use", LABEL_ZH["phone_use"], max(pconf, self.phone_use_conf),
+                        bbox=list(pbox), severity=SEVERITY_MAP["phone_use"],
+                        evidence="COCO手机检出(unified漏检补充)"))
+                    raw.append("phone_use")
+            # 有 phone_use(任一来源) → 抑制易混淆的 drinking/eating
+            if any(e.type == "phone_use" for e in events):
                 events = [e for e in events if e.type not in ("drinking", "eating")]
                 raw = [t for t in raw if t not in ("drinking", "eating")]
+            # drinking：同理用 COCO 追踪到的水杯/水瓶框稳定显示框(触发仍靠 unified)
+            drink_track = obj_tracks.get("drinking")
+            if drink_track is not None:
+                for e in events:
+                    if e.type == "drinking" and e.bbox and _center_inside(drink_track[0], e.bbox):
+                        e.bbox = list(drink_track[0])
+                        e.evidence = (e.evidence + " + COCO水杯追踪框") if e.evidence else "COCO水杯追踪框"
+            # 背景人误识别抑制(如背后有人拿手机)：丢弃明显落在背景人身上的行为
+            if realtime and self.suppress_background:
+                events, raw = self._suppress_background(events, raw)
         else:
             events, raw, driver_present = self._from_base(r, events, raw)
 
         return self._finalize(frame_id, timestamp, events, t0,
                               driver_present=driver_present, camera_ok=True,
-                              raw=raw)
+                              raw=raw, persons=persons, hold=realtime)
 
     # ---------- 类别 → BehaviorEvent ----------
 
@@ -409,9 +638,13 @@ class BehaviorDetector:
         # 两者都检出 / 都没检出 → 不明确，缓慢回落到安全
         self._hands_off_streak = max(0, self._hands_off_streak - 1)
 
-    def _from_unified(self, r, events, raw, coco=None):
-        """从 unified 8 类输出生成 BehaviorEvent 列表"""
-        # 按类别名只保留最高 conf 的 bbox
+    def _build_by_name(self, r) -> Dict[str, Tuple[float, List[float]]]:
+        """按类别名归并 unified 输出，每类保留最高 conf 的有效框（已按分级阈值过滤）。
+
+        注意：推理时用低阈值 min(conf, smoking_conf) 出框以保灵敏，这里才是真正的
+        "有效检测"判定——低于各类阈值的杂框在此被剔除。判断"是否有驾驶员"必须基于
+        本方法的结果，而不是原始框数量（杂框不代表有人）。
+        """
         by_name: Dict[str, Tuple[float, List[float]]] = {}
         if r.boxes is not None:
             for box in r.boxes:
@@ -422,7 +655,6 @@ class BehaviorDetector:
                     continue
                 # 按类分级阈值：smoking 用 smoking_conf；drinking/eating 用更高的
                 # drink_eat_conf(抑制举手机/打电话被误判成喝水/进食)；其余类用 self.conf。
-                # (phone_use 不在此判定，统一改由 COCO 实体手机检测驱动)
                 if name == "smoking":
                     min_conf = self.smoking_conf
                 elif name in ("drinking", "eating"):
@@ -434,11 +666,21 @@ class BehaviorDetector:
                 xyxy = box.xyxy[0].cpu().numpy().tolist()
                 if name not in by_name or cf > by_name[name][0]:
                     by_name[name] = (cf, xyxy)
+        return by_name
 
+    def _from_unified(self, by_name, events, raw, coco=None, realtime=False):
+        """从 unified 8 类有效检测(by_name)生成 BehaviorEvent 列表。
+
+        realtime=True（实时监测）：只输出危险动作(phone_use/smoking/drinking/eating)，
+            不判定"驾驶位无人"、安全带、方向盘——即时响应，避免误报。
+        realtime=False（上传视频）：完整逻辑，含 no_driver / 安全带 / 双手离盘。
+        """
         # 完全无检测：unified 没有 person 类，不能直接当成"驾驶位无人"。
-        # 先用 COCO 模型确认画面里到底有没有人——有人则视为正常驾驶（无风险行为），
-        # 确实无人才报 no_driver，并带上真实人体缺失的判定。
         if not by_name:
+            if realtime:
+                # 实时模式不判定"驾驶位无人"，恒视为有驾驶员（不产生告警）
+                return events, raw, True
+            # 视频模式：用 COCO 确认画面里到底有没有人——确实无人才报 no_driver。
             person = coco.get("person") if coco else None
             if person is None:
                 events.append(BehaviorEvent(
@@ -467,6 +709,10 @@ class BehaviorDetector:
                 severity=SEVERITY_MAP.get(btype, "medium"),
                 evidence=evidence))
             raw.append(btype)
+
+        # 实时模式到此结束：只要危险动作，不判定方向盘/安全带（即时响应）
+        if realtime:
+            return events, raw, True
 
         # 双手离盘：状态迁移逻辑（默认在盘=安全，仅"在盘→离盘"才告警）
         self._hands_event(by_name, events, raw)
@@ -532,13 +778,32 @@ class BehaviorDetector:
     # ---------- 打包 ----------
 
     def _finalize(self, frame_id, timestamp, events, start_ts,
-                  driver_present, camera_ok, raw):
+                  driver_present, camera_ok, raw, persons=None, hold=False):
         stable_set = set(self.smoother.update(raw, timestamp))
         stable_events: List[BehaviorEvent] = []
+        present: set = set()
         for e in events:
             if e.type in stable_set:
                 e.duration_s = round(self.smoother.duration(e.type, timestamp), 2)
                 stable_events.append(e)
+                present.add(e.type)
+                if e.bbox:  # 记住每类最近一次的框，供"轨迹保持"补帧
+                    self._held_box[e.type] = (list(e.bbox), e.label_zh, e.severity, float(e.confidence))
+
+        # 轨迹保持(仅 realtime)：某类型仍活跃但本帧没检到框 → 沿用上次框继续输出，
+        # 让框在零星漏检的中间帧不消失(连续平滑、不闪)。频繁漏检由 deactivate 兜底清除。
+        if hold:
+            for t in stable_set:
+                if t not in present and t in self._held_box:
+                    bbox, label, sev, conf = self._held_box[t]
+                    stable_events.append(BehaviorEvent(
+                        t, label, conf, bbox=list(bbox), severity=sev,
+                        duration_s=round(self.smoother.duration(t, timestamp), 2),
+                        evidence="轨迹保持(本帧漏检，沿用上次框)"))
+            # 平滑器已判不活跃的类型，清掉其保持框，避免下次复现时用到旧位置
+            for t in list(self._held_box):
+                if t not in stable_set:
+                    self._held_box.pop(t, None)
 
         # 告警等级取风险事件的最高 severity（hand_on_wheel/seatbelt 等"安全"类不算）
         alarm_events = [
@@ -565,6 +830,7 @@ class BehaviorDetector:
             "recommendation": RECOMMEND.get(max_sev, "正常驾驶"),
             "driver_present": driver_present,
             "camera_ok": camera_ok,
+            "persons": persons or [],
         }
 
     # ---------- 可视化 ----------
