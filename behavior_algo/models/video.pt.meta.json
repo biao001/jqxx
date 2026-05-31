@@ -1,0 +1,40 @@
+{
+  "dataset": "video_demo",
+  "base": "yolov8s.pt",
+  "epochs": 150,
+  "imgsz": 768,
+  "freeze": 0,
+  "lr0": 0.001,
+  "all_splits": false,
+  "include_incremental": false,
+  "finished_at": 1780214870,
+  "epoch": 78,
+  "map50": 0.5804,
+  "map": 0.3876,
+  "per_class": {
+    "phone_use": {
+      "map50": 0.3317,
+      "map": 0.0663,
+      "p": 0.0,
+      "r": 0.0
+    },
+    "smoking": {
+      "map50": 0.0,
+      "map": 0.0,
+      "p": 1.0,
+      "r": 0.0
+    },
+    "drinking": {
+      "map50": 0.995,
+      "map": 0.5887,
+      "p": 0.989,
+      "r": 1.0
+    },
+    "hands_off_wheel": {
+      "map50": 0.995,
+      "map": 0.8955,
+      "p": 0.9571,
+      "r": 1.0
+    }
+  }
+}
