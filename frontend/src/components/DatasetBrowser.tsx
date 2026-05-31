@@ -209,6 +209,7 @@ export default function DatasetBrowser({ open, onClose, backendUrl, dataset = 'r
   const uploadFiles = async (files: File[]) => {
     if (!files.length) return;
     let ok = 0;
+    let dup = 0;  // 感知去重命中、未入库的重复图
     let lastName = '';
     for (let i = 0; i < files.length; i++) {
       setBusy(`上传中 ${i + 1}/${files.length}…`);
@@ -218,9 +219,10 @@ export default function DatasetBrowser({ open, onClose, backendUrl, dataset = 'r
       try {
         const d = await (await fetch(`${backendUrl}/api/dataset/image_upload`, { method: 'POST', body: fd })).json();
         if (d.name) { ok++; lastName = d.name; }
+        else if (d.duplicate) dup++;
       } catch { /* 跳过失败的单张 */ }
     }
-    setBusy(`✅ 上传 ${ok}/${files.length} 张到「未划分」，可标注后点“自动划分”`); setTimeout(() => setBusy(''), 4000);
+    setBusy(`✅ 上传 ${ok}/${files.length} 张到「未划分」${dup ? `，跳过 ${dup} 张重复` : ''}，可标注后点“自动划分”`); setTimeout(() => setBusy(''), 4000);
     if (files.length === 1 && lastName) { origRef.current = '[]'; setSel({ name: lastName, split: 'unassigned', boxes: [], classes: [], tiny: false, huge: false }); setSelIdx(-1); setZoom(1); setPan({ x: 0, y: 0 }); }
     if (split !== 'unassigned') setSplit('unassigned'); else load();
   };
@@ -286,8 +288,8 @@ export default function DatasetBrowser({ open, onClose, backendUrl, dataset = 'r
     fd.append('every_sec', String(everySec)); fd.append('max_frames', String(maxFrames));
     fetch(`${backendUrl}/api/dataset/video_frames`, { method: 'POST', body: fd })
       .then((r) => r.json())
-      .then((d: { detail?: string; saved?: number }) => {
-        setBusy(d.detail ? `❌ ${d.detail}` : `✅ 切出 ${d.saved} 帧到「未划分」，可标注后“自动划分”`);
+      .then((d: { detail?: string; saved?: number; skipped?: number }) => {
+        setBusy(d.detail ? `❌ ${d.detail}` : `✅ 切出 ${d.saved} 帧到「未划分」${d.skipped ? `，跳过 ${d.skipped} 帧重复` : ''}，可标注后“自动划分”`);
         setTimeout(() => setBusy(''), 4000);
         if (split !== 'unassigned') setSplit('unassigned'); else load();
       })

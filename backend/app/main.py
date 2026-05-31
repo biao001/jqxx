@@ -258,8 +258,12 @@ async def dataset_image_upload(split: str = Form("unassigned"), dataset: str = F
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="文件为空")
-    name = dataset_mod.add_single_image(_dataset_dir(dataset), split, file.filename or "img.jpg", content)
-    return {"name": name, "split": split}
+    ds_dir = _dataset_dir(dataset)
+    dedup = dataset_mod.DedupIndex(ds_dir)
+    name = dataset_mod.add_single_image(ds_dir, split, file.filename or "img.jpg", content, dedup=dedup)
+    dedup.flush()
+    # name 为 None：与库内已有图近重复，已跳过未入库
+    return {"name": name, "split": split, "duplicate": name is None}
 
 
 @app.post("/api/dataset/labels")
@@ -543,7 +547,9 @@ async def dataset_video_frames(
         if fps <= 0:
             fps = 25.0
         step = max(1, int(round(fps * every_sec)))
+        dedup = dataset_mod.DedupIndex(ds_dir)
         saved = 0
+        skipped = 0  # 近重复(与已入库或本批已取帧雷同)被跳过的帧数
         idx = 0
         names: list[str] = []
         while saved < max_frames:
@@ -553,12 +559,16 @@ async def dataset_video_frames(
             if idx % step == 0:
                 ok2, buf = cv2.imencode(".jpg", frame)
                 if ok2:
-                    nm = dataset_mod.add_single_image(ds_dir, split, "frame.jpg", buf.tobytes())
-                    names.append(nm)
-                    saved += 1
+                    nm = dataset_mod.add_single_image(ds_dir, split, "frame.jpg", buf.tobytes(), dedup=dedup)
+                    if nm is None:
+                        skipped += 1
+                    else:
+                        names.append(nm)
+                        saved += 1
             idx += 1
         cap.release()
-        return {"saved": saved, "split": split, "fps": round(fps, 1), "every_sec": every_sec, "names": names[:5]}
+        dedup.flush()
+        return {"saved": saved, "skipped": skipped, "split": split, "fps": round(fps, 1), "every_sec": every_sec, "names": names[:5]}
     except HTTPException:
         raise
     except Exception as exc:
@@ -590,7 +600,8 @@ def dataset_capture_frames(payload: dict) -> dict:
     conf = float(payload.get("conf", 0.25) or 0.25)
     ds_dir = _dataset_dir(dataset)
 
-    saved = labeled = total_boxes = 0
+    dedup = dataset_mod.DedupIndex(ds_dir)
+    saved = labeled = total_boxes = skipped = 0
     note = ""
     for item in frames:
         s = str(item)
@@ -600,7 +611,10 @@ def dataset_capture_frames(payload: dict) -> dict:
             raw = base64.b64decode(s)
         except Exception:
             continue
-        name = dataset_mod.add_single_image(ds_dir, split, "cap.jpg", raw)
+        name = dataset_mod.add_single_image(ds_dir, split, "cap.jpg", raw, dedup=dedup)
+        if name is None:
+            skipped += 1  # 与已入库/本批已存帧近重复，跳过
+            continue
         saved += 1
         if do_label:
             img = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -615,7 +629,8 @@ def dataset_capture_frames(payload: dict) -> dict:
                 dataset_mod.write_labels(ds_dir, split, name, boxes)
                 labeled += 1
                 total_boxes += len(boxes)
-    return {"saved": saved, "labeled": labeled, "boxes": total_boxes,
+    dedup.flush()
+    return {"saved": saved, "skipped": skipped, "labeled": labeled, "boxes": total_boxes,
             "split": split, "dataset": dataset, "note": note,
             "model": service.behavior.active_model()}
 

@@ -671,6 +671,7 @@ export default function App() {
       if (res.detail) setStatusMessage(`录制入库失败：${res.detail}`);
       else setStatusMessage(
         `✅ 已录制 ${res.saved} 帧到「${res.dataset}」` +
+        (res.skipped ? `(跳过 ${res.skipped} 帧重复)` : '') +
         (recAutolabel ? `(预标注 ${res.labeled} 帧/${res.boxes} 框)` : '(未预标，全手动)') +
         `。请到「模型与数据 → 逐张浏览/编辑标注」修正后重训`,
       );

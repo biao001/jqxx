@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import io
+import json
 import math
 import random
 import zipfile
@@ -291,12 +292,113 @@ def redistribute_splits(ds_dir: Path, val_frac: float, test_frac: float) -> dict
     return {"total": n, "moved": moved, "splits": counts}
 
 
-def add_single_image(ds_dir: Path, split: str, filename: str, content: bytes) -> str:
+# ---------- 感知去重(dHash) ----------
+# 入库前用感知哈希拦掉与已有图「几乎一样」的图(视频相邻帧/实时连拍最常见)，
+# 避免重复上传+重复标注浪费人力。精确同一文件也会被一并判重。
+
+DHASH_CACHE = ".dhash.json"   # 数据集根下的指纹缓存(键=<split>/<文件名>)，避免每次全量重算
+DUP_HAMMING_DIST = 5          # 64 位 dHash 汉明距离阈值：<= 即判近重复(越小越严)
+
+
+def image_dhash(content: bytes) -> int | None:
+    """64 位 dHash 感知哈希：缩成 9×8 灰度，比较每行相邻像素。解码失败返回 None。"""
+    arr = np.frombuffer(content, dtype=np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        return None
+    small = cv2.resize(img, (9, 8), interpolation=cv2.INTER_AREA).astype(np.int16)
+    diff = small[:, 1:] > small[:, :-1]   # 8×8 bool
+    bits = 0
+    for v in diff.flatten():
+        bits = (bits << 1) | int(v)
+    return bits
+
+
+def _hamming(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
+
+
+class DedupIndex:
+    """数据集级感知去重索引：维护跨 split 的 dHash 指纹，判定新图是否与已入库图近重复。
+
+    用 .dhash.json 缓存避免每次全量重算；构建时按磁盘实际文件增量补算、剔除已删项。
+    批量入库时新指纹先记到内存，最后 flush() 落盘。线程内单次请求使用，不做并发保护。
+    """
+
+    def __init__(self, ds_dir: Path, max_dist: int = DUP_HAMMING_DIST):
+        self.ds_dir = ds_dir
+        self.max_dist = max(0, int(max_dist))
+        self._by_key: dict[str, int] = {}
+        self._dirty = False
+        self._load()
+
+    def _load(self) -> None:
+        cache: dict[str, int] = {}
+        cache_path = self.ds_dir / DHASH_CACHE
+        if cache_path.exists():
+            try:
+                cache = {k: int(v) for k, v in json.loads(cache_path.read_text()).items()}
+            except Exception:
+                cache = {}
+        current: dict[str, int] = {}
+        for sp in BROWSE_SPLITS:
+            img_dir = self.ds_dir / sp / "images"
+            if not img_dir.exists():
+                continue
+            for p in img_dir.iterdir():
+                if p.suffix.lower() not in IMG_EXT:
+                    continue
+                key = f"{sp}/{p.name}"
+                h = cache.get(key)
+                if h is None:
+                    self._dirty = True  # 缓存缺失 → 需重算并回写
+                    try:
+                        h = image_dhash(p.read_bytes())
+                    except Exception:
+                        h = None
+                    if h is None:
+                        continue
+                current[key] = h
+        if len(current) != len(cache):
+            self._dirty = True  # 有图被删/键不一致 → 回写收敛
+        self._by_key = current
+
+    def is_dup(self, h: int | None) -> bool:
+        if h is None:
+            return False
+        return any(_hamming(h, e) <= self.max_dist for e in self._by_key.values())
+
+    def register(self, split: str, filename: str, h: int | None) -> None:
+        if h is not None:
+            self._by_key[f"{split}/{filename}"] = h
+            self._dirty = True
+
+    def flush(self) -> None:
+        if not self._dirty:
+            return
+        try:
+            (self.ds_dir / DHASH_CACHE).write_text(
+                json.dumps({k: str(v) for k, v in self._by_key.items()})
+            )
+            self._dirty = False
+        except Exception:
+            pass
+
+
+def add_single_image(ds_dir: Path, split: str, filename: str, content: bytes,
+                     dedup: "DedupIndex | None" = None) -> str | None:
     """上传单张图片到指定 split，创建空标注(待画框)。
 
     统一命名为 <数据集名>_<split>_<5位序号>，如 realtime_demo_train_00001，
     便于排序、追溯来源、避免随机名难以管理。返回名称(stem)。
+    dedup 给定时：先算感知哈希，若与库内近重复则跳过(不写文件，返回 None)；
+    否则写入并把新指纹登记进索引(批量结束后由调用方 flush() 落盘)。
     """
+    h = None
+    if dedup is not None:
+        h = image_dhash(content)
+        if dedup.is_dup(h):
+            return None
     img_dir = ds_dir / split / "images"
     lbl_dir = ds_dir / split / "labels"
     img_dir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +410,8 @@ def add_single_image(ds_dir: Path, split: str, filename: str, content: bytes) ->
     name = f"{prefix}{_next_seq(img_dir, prefix):05d}"
     (img_dir / (name + ext)).write_bytes(content)
     (lbl_dir / (name + ".txt")).write_text("")
+    if dedup is not None:
+        dedup.register(split, name + ext, h)
     return name
 
 
